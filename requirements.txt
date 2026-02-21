@@ -1,0 +1,8 @@
+python-telegram-bot[job-queue]
+python-dotenv
+google-genai
+supabase
+python-garminconnect
+pydantic
+requests
+garth
