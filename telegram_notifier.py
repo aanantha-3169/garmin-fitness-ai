@@ -241,31 +241,33 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = data.split(":")[0] if ":" in data else data
     workout_name = data.split(":")[1] if ":" in data else "Training Session"
 
-    current_text = query.message.text_markdown_v2
     today_str = date.today().isoformat()
     from db_manager import update_workout_moved
+
+    # 1. Remove buttons immediately to provide visual feedback of processing
+    await query.edit_message_reply_markup(reply_markup=None)
 
     if action == "move_tomorrow":
         from garmin_calendar_manager import reschedule_workout
         from datetime import timedelta
         
-        status_line = f"\n\n🔄 {_bold('Updating Calendar …')}"
-        await query.edit_message_text(text=current_text + status_line, parse_mode="MarkdownV2")
+        # Send a separate status message to avoid editing complexity
+        status_msg = await query.message.reply_text(f"🔄 {_bold('Updating Calendar …')}", parse_mode="MarkdownV2")
         
         result_msg = reschedule_workout(workout_name, date.today(), date.today() + timedelta(days=1))
         
         if result_msg and "Calendar updated" in result_msg:
-            update_text = f"\n\n✅ {_bold('Update:')} {result_msg}"
+            update_text = f"✅ {_bold('Update:')} {result_msg}"
             update_workout_moved(today_str, True)
         else:
-            update_text = f"\n\n⚠️ {_bold('Wait:')} {result_msg or 'Reschedule failed.'}"
+            update_text = f"⚠️ {_bold('Wait:')} {result_msg or 'Reschedule failed.'}"
             
-        await query.edit_message_text(text=current_text + _esc(update_text), parse_mode="MarkdownV2")
+        await status_msg.edit_text(text=update_text, parse_mode="MarkdownV2")
 
     elif action == "keep_today":
-        update_text = "\n\n✅ {_bold('Update:')} Proceeding with today\\'s plan\\."
+        update_text = f"✅ {_bold('Update:')} Proceeding with today\\'s plan for {_bold(workout_name)}\\."
         update_workout_moved(today_str, False)
-        await query.edit_message_text(text=current_text + update_text, parse_mode="MarkdownV2")
+        await query.message.reply_text(text=update_text, parse_mode="MarkdownV2")
 
 
 def setup_notifier_handlers(application):

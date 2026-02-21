@@ -26,12 +26,13 @@ from typing import Optional
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
 )
 
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 ALLOWED_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3-flash-preview"
 
 DB_PATH = Path(__file__).parent / "meal_tracker.db"
 TARGET_CALORIES_FILE = Path(__file__).parent / "target_calories.json"
@@ -59,6 +60,7 @@ ANALYSIS_PROMPT = (
     "carbs, and fats in this meal. Return ONLY a valid JSON object with "
     'keys: "estimated_calories" (int), "protein_g" (int), "carbs_g" (int), '
     '"fats_g" (int), "meal_description" (string).'
+    "\n\nIf the user provided context, use it to refine your estimates."
 )
 
 
@@ -197,16 +199,20 @@ def save_target_calories(target: int):
 
 # ── Gemini Vision ────────────────────────────────────────────────────────────
 
-def _analyze_food_photo(image_bytes: bytes) -> Optional[dict]:
-    """Send a food photo to Gemini and return macro estimates."""
+def _analyze_food_photo(image_bytes: bytes, user_description: str = None) -> Optional[dict]:
+    """Send a food photo (and optional text) to Gemini and return macro estimates."""
     client = genai.Client(api_key=GEMINI_API_KEY)
+
+    contents = [types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")]
+    prompt = ANALYSIS_PROMPT
+    if user_description:
+        prompt += f"\n\nUser Notes: {user_description}"
+    
+    contents.append(prompt)
 
     response = client.models.generate_content(
         model=GEMINI_MODEL,
-        contents=[
-            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-            ANALYSIS_PROMPT,
-        ],
+        contents=contents,
     )
 
     raw = response.text.strip()
@@ -225,9 +231,11 @@ async def _cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     await update.message.reply_text(
         "👋 Send me a photo of your meal and I'll estimate the macros!\n\n"
+        "I'll show you my estimate first, then you can save or correct it\\.\n\n"
         "Commands:\n"
         "/today — show today's totals\n"
-        "/reset — clear today's log"
+        "/reset — clear today's log",
+        parse_mode="MarkdownV2"
     )
 
 
@@ -278,7 +286,6 @@ async def _cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming food photos."""
-    from db_manager import add_calories
     chat_id = str(update.effective_chat.id)
 
     # Optional: restrict to allowed chat
@@ -293,17 +300,35 @@ async def _handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(photo.file_id)
     image_bytes = await file.download_as_bytearray()
 
+    # Store photo in user_data for potential re-analysis
+    context.user_data["pending_photo"] = bytes(image_bytes)
+
     # Analyze with Gemini
+    await _perform_meal_analysis(update, context)
+
+
+async def _perform_meal_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE, user_note: Optional[str] = None):
+    """Core analysis logic shared between photo and text-correction steps."""
+    image_bytes = context.user_data.get("pending_photo")
+    if not image_bytes:
+        await update.effective_message.reply_text("❌ Session lost. Please send a new photo.")
+        return
+
     try:
-        result = _analyze_food_photo(bytes(image_bytes))
+        result = _analyze_food_photo(image_bytes, user_note)
     except Exception as exc:
         logger.error("Gemini analysis failed: %s", exc)
-        await update.message.reply_text("❌ Sorry, I couldn't analyze that photo\\. Try again\\?", parse_mode="MarkdownV2")
+        await update.effective_message.reply_text("❌ Sorry, I couldn't analyze that photo\\. Try again\\?", parse_mode="MarkdownV2")
         return
 
     if not result:
-        await update.message.reply_text("❌ Couldn't parse the result\\. Try a clearer photo\\.", parse_mode="MarkdownV2")
+        await update.effective_message.reply_text("❌ Couldn't parse the result\\. Try a clearer photo\\.", parse_mode="MarkdownV2")
         return
+
+    # Store calculation in user_data
+    context.user_data["pending_meal"] = result
+    # Clear correction flag
+    context.user_data["awaiting_correction"] = False
 
     cal = result.get("estimated_calories", 0)
     pro = result.get("protein_g", 0)
@@ -311,40 +336,89 @@ async def _handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fats = result.get("fats_g", 0)
     desc = result.get("meal_description", "Unknown meal")
 
-    # Log to LOCAL SQLite
-    _log_meal(chat_id, cal, pro, carbs, fats, desc)
-    
-    # Sync to SUPABASE
-    add_calories(date.today().isoformat(), cal)
-
-    # Get updated combined data
-    data = _get_daily_data(chat_id)
-    totals = _get_daily_totals(chat_id)
-
-    # Format reply
-    t_cal = "{:,}".format(data["consumed"])
-    t_tar = "{:,}".format(data["target"])
-    t_rem = "{:,}".format(data["remaining"])
-    t_meals = str(totals["meal_count"])
-    t_pro = str(totals["protein_g"])
-    t_carb = str(totals["carbs_g"])
-    t_fat = str(totals["fats_g"])
-
+    # Format reply with buttons
+    title = f"🍽️ {_bold('Analysis')}" if not user_note else f"🔄 {_bold('Revised Analysis')}"
     msg = (
-        f"🍽️ {_bold(desc)}\n\n"
+        f"{title}\n\n"
+        f"📝 {_bold(desc)}\n"
         f"🔥 Calories: {_bold(str(cal))}\n"
         f"🥩 Protein:  {_bold(str(pro))}g\n"
         f"🍚 Carbs:    {_bold(str(carbs))}g\n"
         f"🧈 Fats:     {_bold(str(fats))}g\n\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📊 {_bold('Daily Total')} \n"
-        f"🔥 {_esc(t_cal)} / {_esc(t_tar)} kcal\n"
-        f"🥩 {_esc(t_pro)}g  "
-        f"🍚 {_esc(t_carb)}g  "
-        f"🧈 {_esc(t_fat)}g\n\n"
-        f"🎯 {_bold('Remaining:')} {_bold(t_rem)} kcal"
+        "Does this look correct?"
     )
-    await update.message.reply_text(msg, parse_mode="MarkdownV2")
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Save", callback_data="meal_save"),
+            InlineKeyboardButton("✏️ Update", callback_data="meal_update"),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="meal_cancel")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.effective_message.reply_text(msg, reply_markup=reply_markup, parse_mode="MarkdownV2")
+
+
+async def _handle_meal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle interactions with meal confirmation buttons."""
+    from db_manager import add_calories
+    query = update.callback_query
+    chat_id = str(update.effective_chat.id)
+    await query.answer()
+
+    if query.data == "meal_save":
+        result = context.user_data.pop("pending_meal", None)
+        context.user_data.pop("pending_photo", None)
+        
+        if not result:
+            await query.edit_message_text("❌ No pending meal found.")
+            return
+
+        cal = result.get("estimated_calories", 0)
+        pro = result.get("protein_g", 0)
+        carbs = result.get("carbs_g", 0)
+        fats = result.get("fats_g", 0)
+        desc = result.get("meal_description", "Unknown meal")
+
+        # Log to LOCAL SQLite
+        _log_meal(chat_id, cal, pro, carbs, fats, desc)
+        # Sync to SUPABASE
+        add_calories(date.today().isoformat(), cal)
+
+        # UI Response
+        await query.edit_message_text(f"✅ {_bold(desc)} saved to your log\\!", parse_mode="MarkdownV2")
+        
+        # Show updated totals
+        data = _get_daily_data(chat_id)
+        t_rem = "{:,}".format(data["remaining"])
+        await query.message.reply_text(f"🎯 {_bold('Remaining:')} {_bold(t_rem)} kcal", parse_mode="MarkdownV2")
+
+    elif query.data == "meal_update":
+        context.user_data["awaiting_correction"] = True
+        await query.edit_message_text(
+            f"✏️ {_bold('Correction Mode')}\n\n"
+            "Please describe the meal in more detail (e.g., 'there's more rice than it looks like' or 'it's actually grilled chicken')\\.\n\n"
+            "I'll use your description to re-analyze the original photo\\.",
+            parse_mode="MarkdownV2"
+        )
+
+    elif query.data == "meal_cancel":
+        context.user_data.pop("pending_meal", None)
+        context.user_data.pop("pending_photo", None)
+        context.user_data.pop("awaiting_correction", None)
+        await query.edit_message_text("❌ Meal discarded.")
+
+
+async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text messages for meal corrections."""
+    text = update.message.text
+    if context.user_data.get("awaiting_correction"):
+        await update.message.reply_text("🔄 Re-analyzing with your correction…")
+        await _perform_meal_analysis(update, context, user_note=text)
+    else:
+        # Default behavior for non-correction text
+        pass
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────

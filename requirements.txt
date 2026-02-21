@@ -6,3 +6,4 @@ garminconnect
 pydantic
 requests
 garth
+streamlit
