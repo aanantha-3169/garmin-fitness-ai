@@ -2,7 +2,7 @@ python-telegram-bot[job-queue]
 python-dotenv
 google-genai
 supabase
-python-garminconnect
+garminconnect 
 pydantic
 requests
 garth
