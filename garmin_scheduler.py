@@ -127,6 +127,40 @@ def _schedule_workout(client: Garmin, workout_id: int, target_date: date) -> boo
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+def get_planned_workout(target_date: date) -> Optional[Dict[str, Any]]:
+    """Return the workout definition for a given date based on the fixed schedule.
+
+    Schedule:
+      • Wednesday — Lift A: Push & Quads
+      • Saturday  — Lift B: Pull & Hinge
+      • Sunday    — Zone 2 Long Run
+    """
+    weekday = target_date.weekday()  # Mon=0 … Sun=6
+
+    if weekday == 2:  # Wednesday
+        return {
+            "name": "Lift A: Push & Quads",
+            "sport_type": SPORT_STRENGTH,
+            "description": "Location: FTL Ben Hill",
+            "duration_minutes": None,
+        }
+    elif weekday == 5:  # Saturday
+        return {
+            "name": "Lift B: Pull & Hinge",
+            "sport_type": SPORT_STRENGTH,
+            "description": "",
+            "duration_minutes": None,
+        }
+    elif weekday == 6:  # Sunday
+        return {
+            "name": "Zone 2 Long Run",
+            "sport_type": SPORT_RUNNING,
+            "description": "Zone 2 steady state",
+            "duration_minutes": 90,
+        }
+    return None
+
+
 def schedule_workout(
     client: Garmin,
     name: str,
@@ -179,32 +213,10 @@ def schedule_week(client: Garmin, start_date: Optional[date] = None):
     schedule = []
     for offset in range(7):
         d = start_date + timedelta(days=offset)
-        weekday = d.weekday()  # Mon=0 … Sun=6
-
-        if weekday == 2:  # Wednesday
-            schedule.append({
-                "name": "Lift A: Push & Quads",
-                "date": d,
-                "sport_type": SPORT_STRENGTH,
-                "description": "Location: FTL Ben Hill",
-                "duration_minutes": None,
-            })
-        elif weekday == 5:  # Saturday
-            schedule.append({
-                "name": "Lift B: Pull & Hinge",
-                "date": d,
-                "sport_type": SPORT_STRENGTH,
-                "description": "",
-                "duration_minutes": None,
-            })
-        elif weekday == 6:  # Sunday
-            schedule.append({
-                "name": "Zone 2 Long Run",
-                "date": d,
-                "sport_type": SPORT_RUNNING,
-                "description": "Zone 2 steady state",
-                "duration_minutes": 90,
-            })
+        planned = get_planned_workout(d)
+        if planned:
+            planned["date"] = d
+            schedule.append(planned)
 
     if not schedule:
         logger.info("No workouts to schedule in the next 7 days from %s.", start_date)

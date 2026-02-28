@@ -28,6 +28,7 @@ from telegram.ext import (
 from garmin_client import get_garmin_client
 from garmin_metrics import get_health_metrics
 from training_advisor import analyze_readiness
+from garmin_scheduler import get_planned_workout, schedule_workout
 from telegram_notifier import (
     handle_status,
     handle_callback,
@@ -72,22 +73,27 @@ async def run_morning_briefing(context):
     # 2. Fetch Metrics
     metrics = get_health_metrics(client)
     
-    # 3. Determine today's workout
-    # (Simple logic: can be refined to check a calendar or schedule)
+    # 3. Determine today's workout using unified schedule
     import datetime
-    weekday = datetime.date.today().weekday()
+    today = datetime.date.today()
+    planned = get_planned_workout(today)
+    
     planned_workout = "Rest Day / Active Recovery"
     workout_name = "General Training"
     
-    if weekday == 0:
-        planned_workout = "Lift A: Push & Quads (Heavy)"
-        workout_name = "Lift A"
-    elif weekday == 2:
-        planned_workout = "Lift B: Pull & Hinge (Hypertrophy)"
-        workout_name = "Lift B"
-    elif weekday == 4:
-        planned_workout = "Zone 2 Long Run (60 min)"
-        workout_name = "Long Run"
+    if planned:
+        planned_workout = planned["name"]
+        workout_name = planned_workout
+        # Ensure it's on the Garmin calendar
+        logger.info(f"📅 Ensuring '{workout_name}' is scheduled on Garmin...")
+        schedule_workout(
+            client, 
+            name=planned["name"], 
+            target_date=today, 
+            duration_minutes=planned["duration_minutes"],
+            description=planned["description"],
+            sport_type=planned["sport_type"]
+        )
 
     # 4. Generate Decision
     decision = analyze_readiness(metrics, planned_workout)

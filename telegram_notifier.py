@@ -29,6 +29,7 @@ from training_advisor import analyze_readiness, TrainingDecision
 from commute_optimizer import get_commute_recommendation
 from garmin_client import get_garmin_client
 from garmin_metrics import get_health_metrics, check_todays_activity_status
+from garmin_scheduler import get_planned_workout, schedule_workout
 
 logger = logging.getLogger(__name__)
 
@@ -149,15 +150,27 @@ async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     metrics = get_health_metrics(client)
     battery = metrics.get("body_battery", {}).get("body_battery_current", "–")
     
-    # Workout type details
-    weekday = date.today().weekday()
+    # Workout type details using unified schedule
+    today = date.today()
+    planned = get_planned_workout(today)
+    
+    workout_name = "Rest Day / Recovery"
     expected_type = "strength_training"
-    workout_name = "Training Session"
-    if weekday == 2: workout_name = "Lift A: Push & Quads"
-    elif weekday == 5: workout_name = "Lift B: Pull & Hinge"
-    elif weekday == 6: 
-        workout_name = "Zone 2 Long Run"
-        expected_type = "running"
+    
+    if planned:
+        workout_name = planned["name"]
+        expected_type = planned["sport_type"]["sportTypeKey"]
+        
+        # FIX: Ensure it is on the calendar before checking status
+        logger.info(f"📅 Syncing '{workout_name}' to Garmin calendar...")
+        schedule_workout(
+            client,
+            name=planned["name"],
+            target_date=today,
+            duration_minutes=planned["duration_minutes"],
+            description=planned["description"],
+            sport_type=planned["sport_type"]
+        )
 
     is_completed = check_todays_activity_status(client, expected_type)
     
