@@ -36,6 +36,9 @@ from telegram.ext import (
     filters,
 )
 
+from garmin_client import get_garmin_client
+from garmin_nutrition import log_meal_to_garmin
+
 load_dotenv()
 
 logging.basicConfig(
@@ -207,7 +210,7 @@ def _analyze_food_photo(image_bytes: bytes, user_description: str = None) -> Opt
     prompt = ANALYSIS_PROMPT
     if user_description:
         prompt += f"\n\nUser Notes: {user_description}"
-    
+
     contents.append(prompt)
 
     response = client.models.generate_content(
@@ -217,7 +220,29 @@ def _analyze_food_photo(image_bytes: bytes, user_description: str = None) -> Opt
 
     raw = response.text.strip()
 
-    # Strip markdown code fences if present
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+
+    return json.loads(raw)
+
+
+def _analyze_food_text(description: str) -> Optional[dict]:
+    """Send a text meal description to Gemini and return macro estimates."""
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    prompt = (
+        ANALYSIS_PROMPT
+        + f"\n\nMeal description: {description}"
+    )
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+    )
+
+    raw = response.text.strip()
+
     if raw.startswith("```"):
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
@@ -230,7 +255,9 @@ def _analyze_food_photo(image_bytes: bytes, user_description: str = None) -> Opt
 async def _cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     await update.message.reply_text(
-        "👋 Send me a photo of your meal and I'll estimate the macros!\n\n"
+        "👋 Log your meals in two ways:\n\n"
+        "📷 *Send a photo* — I'll analyse it with AI\n"
+        "✍️ *Type what you ate* — e.g\\. _'2 eggs, toast and coffee with milk'_\n\n"
         "I'll show you my estimate first, then you can save or correct it\\.\n\n"
         "Commands:\n"
         "/today — show today's totals\n"
@@ -307,18 +334,21 @@ async def _handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _perform_meal_analysis(update, context)
 
 
-async def _perform_meal_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE, user_note: Optional[str] = None):
-    """Core analysis logic shared between photo and text-correction steps."""
+async def _perform_meal_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE, user_note: Optional[str] = None, text_description: Optional[str] = None):
+    """Core analysis logic shared between photo, text-correction, and text-only steps."""
     image_bytes = context.user_data.get("pending_photo")
-    if not image_bytes:
-        await update.effective_message.reply_text("❌ Session lost. Please send a new photo.")
-        return
 
     try:
-        result = _analyze_food_photo(image_bytes, user_note)
+        if text_description:
+            result = _analyze_food_text(text_description)
+        elif image_bytes:
+            result = _analyze_food_photo(image_bytes, user_note)
+        else:
+            await update.effective_message.reply_text("❌ Session lost. Please send a new photo or describe your meal.")
+            return
     except Exception as exc:
         logger.error("Gemini analysis failed: %s", exc)
-        await update.effective_message.reply_text("❌ Sorry, I couldn't analyze that photo\\. Try again\\?", parse_mode="MarkdownV2")
+        await update.effective_message.reply_text("❌ Sorry, I couldn't analyze that\\. Try again\\?", parse_mode="MarkdownV2")
         return
 
     if not result:
@@ -381,14 +411,20 @@ async def _handle_meal_callback(update: Update, context: ContextTypes.DEFAULT_TY
         fats = result.get("fats_g", 0)
         desc = result.get("meal_description", "Unknown meal")
 
+        date_str = date.today().isoformat()
+
         # Log to LOCAL SQLite
         _log_meal(chat_id, cal, pro, carbs, fats, desc)
         # Sync to SUPABASE
-        add_calories(date.today().isoformat(), cal)
+        add_calories(date_str, cal)
+        # Sync to GARMIN
+        garmin = get_garmin_client()
+        if garmin:
+            log_meal_to_garmin(garmin, cal, pro, carbs, fats, date_str)
 
         # UI Response
         await query.edit_message_text(f"✅ {_bold(desc)} saved to your log\\!", parse_mode="MarkdownV2")
-        
+
         # Show updated totals
         data = _get_daily_data(chat_id)
         t_rem = "{:,}".format(data["remaining"])
@@ -411,14 +447,17 @@ async def _handle_meal_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages for meal corrections."""
-    text = update.message.text
+    """Handle text messages — either meal corrections or new text-based meal entries."""
+    text = update.message.text.strip()
+
     if context.user_data.get("awaiting_correction"):
         await update.message.reply_text("🔄 Re-analyzing with your correction…")
         await _perform_meal_analysis(update, context, user_note=text)
     else:
-        # Default behavior for non-correction text
-        pass
+        # Treat any free text as a meal description
+        context.user_data.pop("pending_photo", None)  # ensure no stale photo
+        await update.message.reply_text("🔍 Estimating macros from your description…")
+        await _perform_meal_analysis(update, context, text_description=text)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
