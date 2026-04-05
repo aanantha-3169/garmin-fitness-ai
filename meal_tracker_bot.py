@@ -427,8 +427,19 @@ async def _handle_meal_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
         # Show updated totals
         data = _get_daily_data(chat_id)
+        totals = _get_daily_totals(chat_id)
+        t_cal = "{:,}".format(data["consumed"])
+        t_tar = "{:,}".format(data["target"])
         t_rem = "{:,}".format(data["remaining"])
-        await query.message.reply_text(f"🎯 {_bold('Remaining:')} {_bold(t_rem)} kcal", parse_mode="MarkdownV2")
+        msg = (
+            f"📊 {_bold('Todays totals')} \\({_esc(str(totals['meal_count']))} meals\\)\n\n"
+            f"🔥 Calories: {_bold(t_cal)} / {_esc(t_tar)}\n"
+            f"🥩 Protein:  {_bold(str(totals['protein_g']))}g\n"
+            f"🍚 Carbs:    {_bold(str(totals['carbs_g']))}g\n"
+            f"🧈 Fats:     {_bold(str(totals['fats_g']))}g\n\n"
+            f"🎯 Remaining: {_bold(t_rem)} kcal"
+        )
+        await query.message.reply_text(msg, parse_mode="MarkdownV2")
 
     elif query.data == "meal_update":
         context.user_data["awaiting_correction"] = True
