@@ -28,7 +28,7 @@ from telegram.ext import (
 from garmin_client import get_garmin_client
 from garmin_metrics import get_health_metrics
 from training_advisor import analyze_readiness
-from garmin_scheduler import get_planned_workout, schedule_workout
+from garmin_scheduler import get_planned_workout, schedule_workout, schedule_training_block
 from telegram_notifier import (
     handle_status,
     handle_callback,
@@ -111,11 +111,44 @@ async def run_morning_briefing(context):
         logger.info(f"💾 Daily log for {date_str} persisted to Supabase.")
 
     # 6. Send to Telegram
-    success = await send_morning_briefing(decision, metrics)
+    success = send_morning_briefing(decision, metrics)
     if success:
         logger.info("✅ Morning briefing delivered successfully.")
     else:
         logger.error("❌ Morning briefing delivery failed.")
+
+
+# ── /schedule Command ──────────────────────────────────────────────────────
+
+async def _cmd_schedule(update, context):
+    """Schedule the 7-week training block on the Garmin calendar."""
+    await update.message.reply_text("📆 Scheduling your 7-week training block on Garmin… this may take a minute.")
+
+    client = get_garmin_client()
+    if not client:
+        await update.message.reply_text("❌ Could not connect to Garmin. Try again later.")
+        return
+
+    summary = schedule_training_block(client, weeks=7)
+
+    lines = ["✅ *Training block scheduled!*\n"]
+    if summary["scheduled"]:
+        lines.append(f"📅 *Scheduled:* {len(summary['scheduled'])} workouts")
+    if summary["skipped"]:
+        lines.append(f"⏭️ *Already existed:* {len(summary['skipped'])} workouts")
+    if summary["failed"]:
+        lines.append(f"❌ *Failed:* {len(summary['failed'])} workouts")
+        for f in summary["failed"]:
+            lines.append(f"  • {f}")
+
+    lines.append("\n*Weekly pattern:*")
+    lines.append("Mon/Wed/Thu — PT Session")
+    lines.append("Tue — Easy Run 5–7 km")
+    lines.append("Fri — Rest")
+    lines.append("Sat — Badminton")
+    lines.append("Sun — Zone 2 Long Run")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 # ── Initialization ─────────────────────────────────────────────────────────
@@ -144,6 +177,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_message))
     
     # Training / Status Handlers
+    application.add_handler(CommandHandler("schedule", _cmd_schedule))
     application.add_handler(CommandHandler("status", handle_status))
     application.add_handler(CallbackQueryHandler(handle_callback))
 

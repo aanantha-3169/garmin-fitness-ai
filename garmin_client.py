@@ -12,9 +12,10 @@ Usage:
         print(client.get_user_summary(date.today().isoformat()))
 """
 
+import base64
+import json
 import logging
 import os
-import sys
 from getpass import getpass
 from pathlib import Path
 
@@ -32,6 +33,9 @@ from garminconnect import (
 logger = logging.getLogger(__name__)
 logging.getLogger("garminconnect").setLevel(logging.CRITICAL)
 
+# ── Singleton cache ───────────────────────────────────────────────────────────
+_garmin_client = None
+
 # ── Load .env ────────────────────────────────────────────────────────────────
 load_dotenv()
 
@@ -40,6 +44,35 @@ def _get_tokenstore_path() -> Path:
     """Return the resolved token-store directory path."""
     raw = os.getenv("GARMIN_TOKENSTORE", "~/.garminconnect")
     return Path(raw).expanduser()
+
+
+def _bootstrap_tokens_from_env(tokenstore: Path) -> bool:
+    """Write token files from GARMIN_OAUTH1_TOKEN / GARMIN_OAUTH2_TOKEN env vars.
+
+    On hosted environments (e.g. Render) there is no persistent filesystem.
+    Store the token file contents as base64-encoded env vars and this function
+    will decode and write them before the first login attempt.
+
+    Returns True if at least one token file was written.
+    """
+    written = False
+    for env_var, filename in (
+        ("GARMIN_OAUTH1_TOKEN", "oauth1_token.json"),
+        ("GARMIN_OAUTH2_TOKEN", "oauth2_token.json"),
+    ):
+        value = os.getenv(env_var)
+        if not value:
+            continue
+        try:
+            decoded = base64.b64decode(value).decode("utf-8")
+            json.loads(decoded)  # validate it's proper JSON before writing
+            tokenstore.mkdir(parents=True, exist_ok=True)
+            (tokenstore / filename).write_text(decoded)
+            logger.info("📥 Wrote %s from env var %s.", filename, env_var)
+            written = True
+        except Exception as exc:
+            logger.warning("Failed to decode %s: %s", env_var, exc)
+    return written
 
 
 def _login_with_tokens(tokenstore: Path) :
@@ -121,17 +154,30 @@ def _login_with_credentials(tokenstore: Path):
 def get_garmin_client():
     """Return an authenticated Garmin client.
 
-    1. Try to resume from saved tokens (fast, no 2FA).
-    2. Fall back to email/password login (prompts for MFA if enabled).
-    3. Return ``None`` if all attempts fail.
+    The client is cached for the lifetime of the process — Garmin rate-limits
+    repeated credential logins, so we only authenticate once.
+
+    1. Return cached client if already authenticated.
+    2. Try to resume from saved tokens (fast, no 2FA).
+    3. Fall back to email/password login (prompts for MFA if enabled).
+    4. Return ``None`` if all attempts fail.
     """
+    global _garmin_client
+    if _garmin_client is not None:
+        return _garmin_client
+
     tokenstore = _get_tokenstore_path()
+
+    # Seed token files from env vars (needed on stateless hosts like Render)
+    _bootstrap_tokens_from_env(tokenstore)
 
     # Attempt 1 — saved tokens
     client = _login_with_tokens(tokenstore)
     if client is not None:
-        return client
+        _garmin_client = client
+        return _garmin_client
 
     # Attempt 2 — credential-based login
     logger.info("Falling back to credential-based login …")
-    return _login_with_credentials(tokenstore)
+    _garmin_client = _login_with_credentials(tokenstore)
+    return _garmin_client

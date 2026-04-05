@@ -85,7 +85,7 @@ with st.sidebar:
     st.subheader("⚖️ Weight Check-in")
     with st.form("weight_form", clear_on_submit=True):
         weight = st.number_input("Weight (kg)", min_value=30.0, max_value=200.0, step=0.1, format="%.1f")
-        submitted = st.form_submit_state = st.form_submit_button("Log Weight")
+        submitted = st.form_submit_button("Log Weight")
         
         if submitted:
             try:

@@ -1,16 +1,21 @@
 """
 garmin_scheduler.py — Schedule workouts on the Garmin Connect calendar.
 
-Creates workout definitions via the Garmin Connect API and schedules
-them on specific dates.  Before scheduling, the calendar is checked
-to prevent duplicate entries.
+Weekly training block (7-week program):
+  • Monday    — PT Session (strength/functional with personal trainer)
+  • Tuesday   — Easy Run 5–7 km  (distance set by morning readiness check)
+  • Wednesday — PT Session
+  • Thursday  — PT Session
+  • Friday    — Rest Day (nothing scheduled)
+  • Saturday  — Badminton
+  • Sunday    — Zone 2 Long Run (90 min)
 
 Usage:
     from garmin_client import get_garmin_client
-    from garmin_scheduler import schedule_week
+    from garmin_scheduler import schedule_training_block
 
     client = get_garmin_client()
-    schedule_week(client)
+    schedule_training_block(client, weeks=7)
 """
 
 import logging
@@ -22,18 +27,60 @@ from garminconnect import Garmin
 logger = logging.getLogger(__name__)
 
 # ── Sport type constants ─────────────────────────────────────────────────────
-SPORT_STRENGTH = {"sportTypeId": 5, "sportTypeKey": "strength_training"}
-SPORT_RUNNING  = {"sportTypeId": 1, "sportTypeKey": "running"}
+SPORT_STRENGTH  = {"sportTypeId": 5,  "sportTypeKey": "strength_training"}
+SPORT_RUNNING   = {"sportTypeId": 1,  "sportTypeKey": "running"}
+SPORT_BADMINTON = {"sportTypeId": 63, "sportTypeKey": "racket_sports"}
+
+
+# ── Weekly schedule definition ───────────────────────────────────────────────
+# weekday(): Mon=0 Tue=1 Wed=2 Thu=3 Fri=4 Sat=5 Sun=6
+
+_WEEKLY_SCHEDULE = {
+    0: {  # Monday
+        "name": "PT Session",
+        "sport_type": SPORT_STRENGTH,
+        "description": "Personal trainer session — strength & functional movement",
+        "duration_minutes": 60,
+    },
+    1: {  # Tuesday
+        "name": "Easy Run 5–7 km",
+        "sport_type": SPORT_RUNNING,
+        "description": "Easy aerobic run. Target distance 5 km (low readiness) to 7 km (high readiness).",
+        "duration_minutes": 45,
+    },
+    2: {  # Wednesday
+        "name": "PT Session",
+        "sport_type": SPORT_STRENGTH,
+        "description": "Personal trainer session — strength & functional movement",
+        "duration_minutes": 60,
+    },
+    3: {  # Thursday
+        "name": "PT Session",
+        "sport_type": SPORT_STRENGTH,
+        "description": "Personal trainer session — strength & functional movement",
+        "duration_minutes": 60,
+    },
+    # Friday (4) — rest, nothing scheduled
+    5: {  # Saturday
+        "name": "Badminton",
+        "sport_type": SPORT_BADMINTON,
+        "description": "Badminton match / recreational play",
+        "duration_minutes": 90,
+    },
+    6: {  # Sunday
+        "name": "Zone 2 Long Run",
+        "sport_type": SPORT_RUNNING,
+        "description": "Zone 2 steady-state aerobic run",
+        "duration_minutes": 90,
+    },
+}
 
 
 # ── Low-level helpers ────────────────────────────────────────────────────────
 
 def _get_calendar_items(client: Garmin, target_date: date) -> List[Dict[str, Any]]:
-    """Return all calendar items for the month containing *target_date*.
-
-    The calendar-service uses 0-indexed months (Jan=0, Feb=1, …).
-    """
-    month_index = target_date.month - 1
+    """Return all calendar items for the month containing *target_date*."""
+    month_index = target_date.month - 1  # Garmin uses 0-indexed months
     path = f"/calendar-service/year/{target_date.year}/month/{month_index}"
     try:
         data = client.connectapi(path, method="GET")
@@ -48,7 +95,7 @@ def _workout_exists_on_date(
     name: str,
     target_date: date,
 ) -> bool:
-    """Check whether a workout with *name* is already on *target_date*."""
+    """Return True if a workout with *name* already exists on *target_date*."""
     target_str = target_date.isoformat()
     for item in calendar_items:
         if (
@@ -80,10 +127,7 @@ def _create_workout(
                     {
                         "type": "ExecutableStepDTO",
                         "stepOrder": 1,
-                        "stepType": {
-                            "stepTypeId": 3,
-                            "stepTypeKey": "interval",
-                        },
+                        "stepType": {"stepTypeId": 3, "stepTypeKey": "interval"},
                         "endCondition": {
                             "conditionTypeId": 7,
                             "conditionTypeKey": "iterations",
@@ -110,7 +154,7 @@ def _create_workout(
         return None
 
 
-def _schedule_workout(client: Garmin, workout_id: int, target_date: date) -> bool:
+def _schedule_workout_on_date(client: Garmin, workout_id: int, target_date: date) -> bool:
     """Schedule an existing workout on a specific calendar date."""
     try:
         client.connectapi(
@@ -128,37 +172,8 @@ def _schedule_workout(client: Garmin, workout_id: int, target_date: date) -> boo
 # ── Public API ───────────────────────────────────────────────────────────────
 
 def get_planned_workout(target_date: date) -> Optional[Dict[str, Any]]:
-    """Return the workout definition for a given date based on the fixed schedule.
-
-    Schedule:
-      • Wednesday — Lift A: Push & Quads
-      • Saturday  — Lift B: Pull & Hinge
-      • Sunday    — Zone 2 Long Run
-    """
-    weekday = target_date.weekday()  # Mon=0 … Sun=6
-
-    if weekday == 2:  # Wednesday
-        return {
-            "name": "Lift A: Push & Quads",
-            "sport_type": SPORT_STRENGTH,
-            "description": "Location: FTL Ben Hill",
-            "duration_minutes": None,
-        }
-    elif weekday == 5:  # Saturday
-        return {
-            "name": "Lift B: Pull & Hinge",
-            "sport_type": SPORT_STRENGTH,
-            "description": "",
-            "duration_minutes": None,
-        }
-    elif weekday == 6:  # Sunday
-        return {
-            "name": "Zone 2 Long Run",
-            "sport_type": SPORT_RUNNING,
-            "description": "Zone 2 steady state",
-            "duration_minutes": 90,
-        }
-    return None
+    """Return the workout definition for *target_date*, or None for rest days."""
+    return _WEEKLY_SCHEDULE.get(target_date.weekday())
 
 
 def schedule_workout(
@@ -171,70 +186,93 @@ def schedule_workout(
 ) -> bool:
     """Create a workout and schedule it on *target_date*.
 
-    Returns True if the workout was scheduled (or already existed),
-    False on failure.
-
-    Duplicate check: skips scheduling if a workout with the same
-    *name* already appears on that date in the Garmin calendar.
+    Skips if a workout with the same name already exists on that date.
+    Returns True if scheduled (or already exists), False on failure.
     """
     if sport_type is None:
         sport_type = SPORT_STRENGTH
 
-    # ── Duplicate check ──────────────────────────────────────────────
     cal_items = _get_calendar_items(client, target_date)
     if _workout_exists_on_date(cal_items, name, target_date):
-        logger.info("  ⏭️  '%s' already exists on %s — skipping.", name, target_date)
+        logger.info("  ⏭️  '%s' already on %s — skipping.", name, target_date)
         return True
 
-    # ── Create + schedule ────────────────────────────────────────────
-    workout_id = _create_workout(
-        client, name, sport_type, description, duration_minutes
-    )
+    workout_id = _create_workout(client, name, sport_type, description, duration_minutes)
     if workout_id is None:
         return False
 
-    return _schedule_workout(client, workout_id, target_date)
+    return _schedule_workout_on_date(client, workout_id, target_date)
 
 
-def schedule_week(client: Garmin, start_date: Optional[date] = None):
-    """Populate the upcoming week with the recurring training schedule.
+def schedule_training_block(
+    client: Garmin,
+    weeks: int = 7,
+    start_date: Optional[date] = None,
+) -> Dict[str, Any]:
+    """Schedule the full training block on the Garmin calendar.
 
-    Schedule (relative to *start_date*, default = today):
-      • Wednesday PM — Lift A: Push & Quads  (FTL Ben Hill)
-      • Saturday  AM — Lift B: Pull & Hinge
-      • Sunday    AM — Zone 2 Long Run (90 min)
+    Starts from the Monday of the current week (or *start_date* if provided)
+    and populates *weeks* weeks of the recurring schedule.
 
-    Skips any workout that is already on the calendar for that day.
+    Returns a summary dict: {"scheduled": [...], "skipped": [...], "failed": [...]}.
     """
     if start_date is None:
-        start_date = date.today()
+        today = date.today()
+        # Roll back to the Monday of the current week
+        start_date = today - timedelta(days=today.weekday())
 
-    # Build the list of target dates for the upcoming 7 days
-    schedule = []
-    for offset in range(7):
-        d = start_date + timedelta(days=offset)
-        planned = get_planned_workout(d)
-        if planned:
-            planned["date"] = d
-            schedule.append(planned)
+    summary: Dict[str, List[str]] = {"scheduled": [], "skipped": [], "failed": []}
 
-    if not schedule:
-        logger.info("No workouts to schedule in the next 7 days from %s.", start_date)
-        return
-
+    total_days = weeks * 7
     logger.info(
-        "Scheduling %d workout(s) for the week of %s …",
-        len(schedule),
-        start_date.isoformat(),
+        "📆 Scheduling %d-week training block from %s …", weeks, start_date.isoformat()
     )
 
-    for entry in schedule:
-        logger.info("→ %s on %s", entry["name"], entry["date"])
-        schedule_workout(
+    # Cache calendar items per month to reduce API calls
+    cached_months: Dict[str, List[Dict[str, Any]]] = {}
+
+    for offset in range(total_days):
+        d = start_date + timedelta(days=offset)
+        planned = _WEEKLY_SCHEDULE.get(d.weekday())
+        if planned is None:
+            continue  # Friday — rest day
+
+        month_key = d.strftime("%Y-%m")
+        if month_key not in cached_months:
+            cached_months[month_key] = _get_calendar_items(client, d)
+        cal_items = cached_months[month_key]
+
+        label = f"{planned['name']} on {d.isoformat()}"
+
+        if _workout_exists_on_date(cal_items, planned["name"], d):
+            logger.info("  ⏭️  %s — already exists, skipping.", label)
+            summary["skipped"].append(label)
+            continue
+
+        logger.info("  → Scheduling %s …", label)
+        workout_id = _create_workout(
             client,
-            name=entry["name"],
-            target_date=entry["date"],
-            duration_minutes=entry["duration_minutes"],
-            description=entry["description"],
-            sport_type=entry["sport_type"],
+            planned["name"],
+            planned["sport_type"],
+            planned["description"],
+            planned["duration_minutes"],
         )
+        if workout_id is None:
+            summary["failed"].append(label)
+            continue
+
+        ok = _schedule_workout_on_date(client, workout_id, d)
+        if ok:
+            summary["scheduled"].append(label)
+            # Refresh cached month items so duplicate check stays accurate
+            cached_months[month_key] = _get_calendar_items(client, d)
+        else:
+            summary["failed"].append(label)
+
+    logger.info(
+        "✅ Done. Scheduled: %d | Skipped: %d | Failed: %d",
+        len(summary["scheduled"]),
+        len(summary["skipped"]),
+        len(summary["failed"]),
+    )
+    return summary

@@ -251,8 +251,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     data = query.data
-    action = data.split(":")[0] if ":" in data else data
-    workout_name = data.split(":")[1] if ":" in data else "Training Session"
+    action, _, workout_name = data.partition(":")
+    if not workout_name:
+        workout_name = "Training Session"
 
     today_str = date.today().isoformat()
     from db_manager import update_workout_moved
