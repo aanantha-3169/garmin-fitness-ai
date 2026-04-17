@@ -266,7 +266,7 @@ async def _cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Log your meals in two ways:\n\n"
         "📷 *Send a photo* — I'll analyse it with AI\n"
-        "✍️ *Type what you ate* — e.g\\. _'2 eggs, toast and coffee with milk'_\n\n"
+        "✍️ *Type what you ate* — e\\.g\\. _'2 eggs, toast and coffee with milk'_\n\n"
         "I'll show you my estimate first, then you can save or correct it\\.\n\n"
         "Commands:\n"
         "/today — show today's totals\n"

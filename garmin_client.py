@@ -64,7 +64,7 @@ def _bootstrap_tokens_from_env(tokenstore: Path) -> bool:
         if not value:
             continue
         try:
-            decoded = base64.b64decode(value).decode("utf-8")
+            decoded = base64.b64decode(value + "==").decode("utf-8")
             json.loads(decoded)  # validate it's proper JSON before writing
             tokenstore.mkdir(parents=True, exist_ok=True)
             (tokenstore / filename).write_text(decoded)
@@ -142,7 +142,27 @@ def _persist_tokens_to_supabase(tokenstore: Path) -> None:
         logger.warning("Could not persist tokens to Supabase: %s", exc)
 
 
-def _login_with_tokens(tokenstore: Path) :
+def _dump_tokens(garmin, tokenstore: Path) -> None:
+    """Write garth's current (possibly refreshed) tokens back to *tokenstore*.
+
+    Handles API differences across garminconnect / garth versions:
+      - newer garth: garmin.garth.dump(path)
+      - fallback:    garmin.garth.save(path)
+    Silently skips if neither is available so callers are never blocked.
+    """
+    try:
+        if hasattr(garmin, "garth"):
+            if hasattr(garmin.garth, "dump"):
+                garmin.garth.dump(str(tokenstore))
+            elif hasattr(garmin.garth, "save"):
+                garmin.garth.save(str(tokenstore))
+        else:
+            logger.warning("garmin.garth not found — skipping token dump.")
+    except Exception as exc:
+        logger.warning("Could not dump refreshed tokens to disk: %s", exc)
+
+
+def _login_with_tokens(tokenstore: Path):
     """Attempt to resume a session from previously saved tokens.
 
     Returns a fully authenticated Garmin client, or None if tokens are
@@ -160,6 +180,9 @@ def _login_with_tokens(tokenstore: Path) :
     try:
         garmin = Garmin()
         garmin.login(str(tokenstore))
+        # Write any refreshed OAuth2 token back to disk so
+        # _persist_tokens_to_supabase() reads the latest version.
+        _dump_tokens(garmin, tokenstore)
         logger.info("✅ Session resumed from saved tokens.")
         return garmin
     except FileNotFoundError:
@@ -198,7 +221,7 @@ def _login_with_credentials(tokenstore: Path):
 
         # ── Persist tokens ───────────────────────────────────────────────
         tokenstore.mkdir(parents=True, exist_ok=True)
-        garmin.garth.dump(str(tokenstore))
+        _dump_tokens(garmin, tokenstore)
         logger.info("✅ Logged in successfully. Tokens saved to %s", tokenstore)
         return garmin
 
