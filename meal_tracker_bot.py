@@ -157,39 +157,48 @@ def _get_daily_totals(chat_id: str) -> dict:
 # ── Target Calories & Supabase Logging ───────────────────────────────────────
 
 def _get_daily_data(chat_id: str) -> dict:
-    """Fetch daily totals and target from Supabase/local hybrid.
-    
-    Priority: Supabase > Local File (for target) > SQLite (for totals)
+    """Fetch daily totals and target from Supabase (source of truth on Render).
+
+    Falls back to SQLite + local file only when Supabase is unreachable.
+    Always returns calories, macros, meal_count, target, and remaining.
     """
     from db_manager import get_daily_log
-    
+
     today_str = date.today().isoformat()
     supabase_log = get_daily_log(today_str)
-    
-    # Defaults
-    target = 2500
-    consumed = 0
-    
-    if supabase_log:
-        target = supabase_log.get("target_calories", target)
-        consumed = supabase_log.get("consumed_calories", 0)
-    else:
-        # Fallback to local logic if Supabase is offline or not yet initialized
-        if TARGET_CALORIES_FILE.exists():
-            try:
-                data = json.loads(TARGET_CALORIES_FILE.read_text())
-                if data.get("date") == today_str:
-                    target = int(data.get("target_calories", target))
-            except Exception: pass
-        
-        # Pull totals from SQLite
-        local_totals = _get_daily_totals(chat_id)
-        consumed = local_totals["calories"]
 
+    if supabase_log:
+        target   = supabase_log.get("target_calories",  2500)
+        consumed = supabase_log.get("consumed_calories", 0)
+        return {
+            "target":     target,
+            "consumed":   consumed,
+            "remaining":  max(0, target - consumed),
+            "protein_g":  supabase_log.get("consumed_protein_g", 0),
+            "carbs_g":    supabase_log.get("consumed_carbs_g",   0),
+            "fats_g":     supabase_log.get("consumed_fats_g",    0),
+            "meal_count": supabase_log.get("meal_count",         0),
+        }
+
+    # Supabase unavailable — fall back to local SQLite + file
+    target = 2500
+    if TARGET_CALORIES_FILE.exists():
+        try:
+            data = json.loads(TARGET_CALORIES_FILE.read_text())
+            if data.get("date") == today_str:
+                target = int(data.get("target_calories", target))
+        except Exception:
+            pass
+
+    local = _get_daily_totals(chat_id)
     return {
-        "target": target,
-        "consumed": consumed,
-        "remaining": max(0, target - consumed)
+        "target":     target,
+        "consumed":   local["calories"],
+        "remaining":  max(0, target - local["calories"]),
+        "protein_g":  local["protein_g"],
+        "carbs_g":    local["carbs_g"],
+        "fats_g":     local["fats_g"],
+        "meal_count": local["meal_count"],
     }
 
 
@@ -270,17 +279,14 @@ async def _cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /today — show daily totals."""
     chat_id = str(update.effective_chat.id)
     
-    # Get combined data from Supabase/local
     data = _get_daily_data(chat_id)
-    totals = _get_daily_totals(chat_id)  # For pro/carb/fat details from local SQLite
-    
-    t_cal = "{:,}".format(data["consumed"])
-    t_tar = "{:,}".format(data["target"])
-    t_rem = "{:,}".format(data["remaining"])
-    t_pro = str(totals["protein_g"])
-    t_carb = str(totals["carbs_g"])
-    t_fat = str(totals["fats_g"])
-    t_meals = str(totals["meal_count"])
+    t_cal   = "{:,}".format(data["consumed"])
+    t_tar   = "{:,}".format(data["target"])
+    t_rem   = "{:,}".format(data["remaining"])
+    t_pro   = str(data["protein_g"])
+    t_carb  = str(data["carbs_g"])
+    t_fat   = str(data["fats_g"])
+    t_meals = str(data["meal_count"])
 
     msg = (
         f"📊 {_bold('Todays Totals')} "
@@ -392,7 +398,7 @@ async def _perform_meal_analysis(update: Update, context: ContextTypes.DEFAULT_T
 
 async def _handle_meal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle interactions with meal confirmation buttons."""
-    from db_manager import add_calories
+    from db_manager import add_macros
     query = update.callback_query
     chat_id = str(update.effective_chat.id)
     await query.answer()
@@ -413,10 +419,10 @@ async def _handle_meal_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
         date_str = date.today().isoformat()
 
-        # Log to LOCAL SQLite
+        # Log to LOCAL SQLite (ephemeral on Render, used as in-memory fallback)
         _log_meal(chat_id, cal, pro, carbs, fats, desc)
-        # Sync to SUPABASE
-        add_calories(date_str, cal)
+        # Sync to SUPABASE (persistent — source of truth on deployed bot)
+        add_macros(date_str, cal, pro, carbs, fats)
         # Sync to GARMIN
         garmin = get_garmin_client()
         if garmin:
@@ -427,16 +433,15 @@ async def _handle_meal_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
         # Show updated totals
         data = _get_daily_data(chat_id)
-        totals = _get_daily_totals(chat_id)
         t_cal = "{:,}".format(data["consumed"])
         t_tar = "{:,}".format(data["target"])
         t_rem = "{:,}".format(data["remaining"])
         msg = (
-            f"📊 {_bold('Todays totals')} \\({_esc(str(totals['meal_count']))} meals\\)\n\n"
+            f"📊 {_bold('Todays totals')} \\({_esc(str(data['meal_count']))} meals\\)\n\n"
             f"🔥 Calories: {_bold(t_cal)} / {_esc(t_tar)}\n"
-            f"🥩 Protein:  {_bold(str(totals['protein_g']))}g\n"
-            f"🍚 Carbs:    {_bold(str(totals['carbs_g']))}g\n"
-            f"🧈 Fats:     {_bold(str(totals['fats_g']))}g\n\n"
+            f"🥩 Protein:  {_bold(str(data['protein_g']))}g\n"
+            f"🍚 Carbs:    {_bold(str(data['carbs_g']))}g\n"
+            f"🧈 Fats:     {_bold(str(data['fats_g']))}g\n\n"
             f"🎯 Remaining: {_bold(t_rem)} kcal"
         )
         await query.message.reply_text(msg, parse_mode="MarkdownV2")
