@@ -192,6 +192,31 @@ def save_garmin_tokens(oauth1_json: str, oauth2_json: str) -> bool:
         return False
 
 
+def get_weekly_logs(days: int = 7) -> list:
+    """Return the last *days* rows from daily_logs ordered oldest-first.
+
+    Each row includes all columns so progress_reporter can extract both
+    top-level fields and nested morning_briefing_json metrics.
+    """
+    if not supabase:
+        return []
+
+    try:
+        from datetime import date, timedelta
+        start = (date.today() - timedelta(days=days - 1)).isoformat()
+        res = (
+            supabase.table("daily_logs")
+            .select("*")
+            .gte("date", start)
+            .order("date", desc=False)
+            .execute()
+        )
+        return res.data or []
+    except Exception as exc:
+        logger.error("❌ Failed to fetch weekly logs: %s", exc)
+        return []
+
+
 def load_garmin_tokens() -> Optional[Dict[str, str]]:
     """Load Garmin OAuth token file contents from Supabase.
 

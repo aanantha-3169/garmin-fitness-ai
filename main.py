@@ -43,6 +43,7 @@ from meal_tracker_bot import (
     _handle_meal_callback,
     _handle_message,
 )
+from progress_reporter import build_and_send_weekly_report
 
 # ── Configuration ───────────────────────────────────────────────────────────
 
@@ -118,6 +119,15 @@ async def run_morning_briefing(context):
         logger.error("❌ Morning briefing delivery failed.")
 
 
+# ── /weekly Command ───────────────────────────────────────────────────────
+
+async def _cmd_weekly(update, context):
+    """Send the 7-day progress report on demand."""
+    chat_id = str(update.effective_chat.id)
+    await update.message.reply_text("📊 Building your weekly report…")
+    await build_and_send_weekly_report(context.bot, chat_id)
+
+
 # ── /schedule Command ──────────────────────────────────────────────────────
 
 async def _cmd_schedule(update, context):
@@ -177,6 +187,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_message))
     
     # Training / Status Handlers
+    application.add_handler(CommandHandler("weekly", _cmd_weekly))
     application.add_handler(CommandHandler("schedule", _cmd_schedule))
     application.add_handler(CommandHandler("status", handle_status))
     application.add_handler(CallbackQueryHandler(handle_callback))
@@ -189,6 +200,19 @@ def main():
         run_morning_briefing,
         time=time(hour=5, minute=45, tzinfo=TIMEZONE),
         name="daily_morning_briefing"
+    )
+
+    # Send weekly report every Sunday at 8:00 PM Jakarta time
+    async def _weekly_job(context):
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        if chat_id:
+            await build_and_send_weekly_report(context.bot, chat_id)
+
+    job_queue.run_daily(
+        _weekly_job,
+        time=time(hour=20, minute=0, tzinfo=TIMEZONE),
+        days=(6,),  # Sunday only
+        name="weekly_progress_report"
     )
     
     logger.info("🤖 Garmin Assistant is online and scheduled. (5:45 AM Jakarta)")
