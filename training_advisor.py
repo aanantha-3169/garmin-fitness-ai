@@ -84,14 +84,25 @@ RULES:
 """
 
 
-def _build_user_prompt(garmin_data: dict, planned_workout: str) -> str:
-    """Build the user-turn prompt with embedded metrics and workout plan."""
-    return (
+def _build_user_prompt(
+    garmin_data: dict,
+    planned_workout: str,
+    execution_context: str = "",
+    subjective_notes: str = "",
+) -> str:
+    """Build the user-turn prompt with embedded metrics, workout plan, and
+    optional yesterday's execution telemetry and subjective notes."""
+    prompt = (
         f"## Today's Garmin Metrics\n"
         f"```json\n{json.dumps(garmin_data, indent=2)}\n```\n\n"
         f"## Planned Workout\n{planned_workout}\n\n"
-        f"Analyze my readiness and return a TrainingDecision."
     )
+    if execution_context:
+        prompt += f"## Yesterday's Execution\n{execution_context}\n\n"
+    if subjective_notes:
+        prompt += f"## Recent Athlete Notes\n{subjective_notes}\n\n"
+    prompt += "Analyze my readiness and return a TrainingDecision."
+    return prompt
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -100,6 +111,8 @@ def analyze_readiness(
     garmin_json_data: dict,
     planned_workout_string: str,
     model: str = "gemini-3-flash-preview",
+    execution_context: str = "",
+    subjective_notes: str = "",
 ) -> TrainingDecision:
     """Analyze training readiness using Gemini with structured output.
 
@@ -119,7 +132,12 @@ def analyze_readiness(
 
     client = genai.Client(api_key=api_key)
 
-    user_prompt = _build_user_prompt(garmin_json_data, planned_workout_string)
+    user_prompt = _build_user_prompt(
+        garmin_json_data,
+        planned_workout_string,
+        execution_context=execution_context,
+        subjective_notes=subjective_notes,
+    )
 
     logger.info("Calling Gemini (%s) for readiness analysis …", model)
 

@@ -38,6 +38,7 @@ from telegram.ext import (
 
 from garmin_client import get_garmin_client
 from garmin_nutrition import log_meal_to_garmin
+from intent_router import classify_intent
 
 load_dotenv()
 
@@ -462,16 +463,109 @@ async def _handle_meal_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("❌ Meal discarded.")
 
 
+async def _handle_subjective(update: Update, text: str) -> None:
+    """Persist a qualitative athlete note and acknowledge it."""
+    from db_manager import log_subjective
+    date_str = date.today().isoformat()
+
+    # Simple sentiment: negative keywords → lower score
+    negative_words = {"tight", "sore", "pain", "ache", "tired", "exhausted",
+                      "drained", "heavy", "stiff", "injury", "hurt", "fatigue"}
+    score = -0.5 if any(w in text.lower() for w in negative_words) else 0.3
+    log_subjective(date_str, text, score)
+
+    await update.message.reply_text(
+        f"📝 {_bold('Note logged')}\\!\n\n"
+        f"_{_esc(text)}_\n\n"
+        "I'll factor this into tomorrow's readiness check\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+async def _handle_metric(update: Update, extracted_value: Optional[dict]) -> None:
+    """Persist a self-reported numeric metric and acknowledge it."""
+    from db_manager import log_metric
+    date_str = date.today().isoformat()
+
+    if extracted_value and extracted_value.get("type") and extracted_value.get("value") is not None:
+        metric_type = str(extracted_value["type"])
+        value = float(extracted_value["value"])
+        log_metric(date_str, metric_type, value)
+        await update.message.reply_text(
+            f"📊 {_bold('Metric saved')}: {_esc(metric_type)} \\= {_esc(str(value))}",
+            parse_mode="MarkdownV2",
+        )
+    else:
+        await update.message.reply_text(
+            "📊 Got it\\! I couldn't extract a specific number — try something like "
+            "_'I weigh 82\\.5 kg'_ or _'soreness 6/10'_\\.",
+            parse_mode="MarkdownV2",
+        )
+
+
+async def _handle_query(update: Update, text: str) -> None:
+    """Answer a general question using Gemini with today's nutrition context."""
+    chat_id = str(update.effective_chat.id)
+    data = _get_daily_data(chat_id)
+
+    context_str = (
+        f"Today's nutrition: {data['consumed']} / {data['target']} kcal consumed. "
+        f"Protein: {data['protein_g']}g, Carbs: {data['carbs_g']}g, Fats: {data['fats_g']}g. "
+        f"Remaining: {data['remaining']} kcal."
+    )
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=f"Context: {context_str}\n\nUser question: {text}",
+            config=types.GenerateContentConfig(
+                system_instruction=(
+                    "You are a concise fitness nutrition assistant. "
+                    "Answer the user's question in 1-3 sentences using the provided context. "
+                    "Be direct and practical."
+                ),
+                temperature=0.3,
+            ),
+        )
+        await update.message.reply_text(response.text.strip())
+    except Exception as exc:
+        logger.error("Query handler failed: %s", exc)
+        await update.message.reply_text("❌ Sorry, I couldn't answer that right now\\.", parse_mode="MarkdownV2")
+
+
 async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages — either meal corrections or new text-based meal entries."""
+    """Route incoming text to the correct handler via the intent classifier.
+
+    If the user is mid-correction flow, skip routing and go straight to
+    meal re-analysis to avoid disrupting that interaction state.
+    """
     text = update.message.text.strip()
 
+    # Mid-correction: bypass router — user is refining a meal estimate
     if context.user_data.get("awaiting_correction"):
         await update.message.reply_text("🔄 Re-analyzing with your correction…")
         await _perform_meal_analysis(update, context, user_note=text)
+        return
+
+    # Classify intent before dispatching
+    intent_result = await classify_intent(text)
+    intent = intent_result.get("intent", "MEAL")
+    confidence = intent_result.get("confidence", 0.0)
+
+    # Low-confidence classifications default to MEAL to avoid losing food logs
+    if confidence < 0.6:
+        intent = "MEAL"
+
+    if intent == "SUBJECTIVE":
+        await _handle_subjective(update, text)
+    elif intent == "METRIC":
+        await _handle_metric(update, intent_result.get("extracted_value"))
+    elif intent == "QUERY":
+        await _handle_query(update, text)
     else:
-        # Treat any free text as a meal description
-        context.user_data.pop("pending_photo", None)  # ensure no stale photo
+        # MEAL — existing flow
+        context.user_data.pop("pending_photo", None)
         await update.message.reply_text("🔍 Estimating macros from your description…")
         await _perform_meal_analysis(update, context, text_description=text)
 

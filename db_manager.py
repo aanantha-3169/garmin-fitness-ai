@@ -192,6 +192,90 @@ def save_garmin_tokens(oauth1_json: str, oauth2_json: str) -> bool:
         return False
 
 
+def save_completed_workout(date_str: str, data: Dict[str, Any]) -> bool:
+    """Upsert a completed workout telemetry row for *date_str*."""
+    if not supabase:
+        return False
+    try:
+        payload = {"date": date_str, **data}
+        existing = supabase.table("completed_workouts").select("date").eq("date", date_str).execute()
+        if existing.data:
+            supabase.table("completed_workouts").update(payload).eq("date", date_str).execute()
+        else:
+            supabase.table("completed_workouts").insert(payload).execute()
+        logger.info("✅ Completed workout saved for %s", date_str)
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to save completed workout for %s: %s", date_str, exc)
+        return False
+
+
+def get_completed_workout(date_str: str) -> Optional[Dict[str, Any]]:
+    """Return the completed workout row for *date_str*, or None."""
+    if not supabase:
+        return None
+    try:
+        res = supabase.table("completed_workouts").select("*").eq("date", date_str).execute()
+        return res.data[0] if res.data else None
+    except Exception as exc:
+        logger.error("❌ Failed to get completed workout for %s: %s", date_str, exc)
+        return None
+
+
+def log_subjective(date_str: str, context_text: str, sentiment_score: float) -> bool:
+    """Append a subjective log entry (injury, fatigue note, mood) for *date_str*."""
+    if not supabase:
+        return False
+    try:
+        supabase.table("subjective_logs").insert({
+            "date": date_str,
+            "context_text": context_text,
+            "sentiment_score": sentiment_score,
+        }).execute()
+        logger.info("✅ Subjective log saved for %s", date_str)
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to save subjective log: %s", exc)
+        return False
+
+
+def get_recent_subjective_logs(days: int = 2) -> list:
+    """Return subjective log entries from the last *days* days, oldest first."""
+    if not supabase:
+        return []
+    try:
+        from datetime import date, timedelta
+        start = (date.today() - timedelta(days=days)).isoformat()
+        res = (
+            supabase.table("subjective_logs")
+            .select("date, context_text, sentiment_score")
+            .gte("date", start)
+            .order("date", desc=False)
+            .execute()
+        )
+        return res.data or []
+    except Exception as exc:
+        logger.error("❌ Failed to fetch subjective logs: %s", exc)
+        return []
+
+
+def log_metric(date_str: str, metric_type: str, value: float) -> bool:
+    """Log a user-reported metric (weight, soreness scale, etc.) for *date_str*."""
+    if not supabase:
+        return False
+    try:
+        supabase.table("metric_logs").insert({
+            "date": date_str,
+            "metric_type": metric_type,
+            "value": value,
+        }).execute()
+        logger.info("✅ Metric log saved: %s = %s on %s", metric_type, value, date_str)
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to save metric log: %s", exc)
+        return False
+
+
 def get_weekly_logs(days: int = 7) -> list:
     """Return the last *days* rows from daily_logs ordered oldest-first.
 
