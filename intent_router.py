@@ -1,16 +1,18 @@
 """
 intent_router.py — Lightweight Gemini-based NLP intent classifier.
 
-Classifies incoming free-text Telegram messages into one of four intents
+Classifies incoming free-text Telegram messages into one of six intents
 before any downstream handler processes them, preventing meal descriptions
 from being parsed when the user is actually reporting an injury or asking
 a question.
 
 Intents:
-  MEAL       — food/drink description to be macro-analysed
-  METRIC     — a numeric self-reported metric (weight, soreness, sleep hrs)
-  SUBJECTIVE — qualitative feeling, injury note, fatigue observation
-  QUERY      — a question directed at the bot
+  MEAL          — food/drink description to be macro-analysed
+  METRIC        — a numeric self-reported metric (weight, soreness, sleep hrs)
+  SUBJECTIVE    — qualitative feeling, injury note, fatigue observation
+  QUERY         — a question directed at the bot
+  FEAR          — water or race fear expression
+  TRAINING_LOG  — athlete reporting a completed session
 
 Usage:
     from intent_router import classify_intent
@@ -51,10 +53,21 @@ Classify the user's message into EXACTLY ONE of these intents:
                e.g. "how many calories do I have left?", "what should I eat?",
                "did I hit my protein goal?"
 
+  FEAR       — expresses water, open-water, or race fear/anxiety
+               e.g. "felt okay in the pool today", "panicked at the wall",
+               "water fear was 3/10 this morning", "still scared of open water",
+               "not sure I can handle the swim leg"
+
+  TRAINING_LOG — athlete reporting a completed training session with data
+               e.g. "did 750m in 16 minutes", "45 min bike avg HR 138",
+               "ran 8km at 6:30 pace", "finished the brick — 60 min bike then 20 min run"
+
 Return ONLY valid JSON with these fields:
-  intent          : one of MEAL | METRIC | SUBJECTIVE | QUERY
+  intent          : one of MEAL | METRIC | SUBJECTIVE | QUERY | FEAR | TRAINING_LOG
   confidence      : float 0.0–1.0
   extracted_value : for METRIC, a dict {"type": str, "value": float/str};
+                    for TRAINING_LOG, a dict {"sport": str, "duration_min": float/null,
+                    "distance": str/null, "avg_hr": float/null};
                     for all others, null
 
 Examples:
@@ -69,6 +82,18 @@ Examples:
 
   "how many calories left today?"
   → {"intent":"QUERY","confidence":0.97,"extracted_value":null}
+
+  "water fear was 3/10 this morning"
+  → {"intent":"FEAR","confidence":0.97,"extracted_value":null}
+
+  "panicked at the wall again"
+  → {"intent":"FEAR","confidence":0.94,"extracted_value":null}
+
+  "did 750m in 16 minutes"
+  → {"intent":"TRAINING_LOG","confidence":0.97,"extracted_value":{"sport":"swim","duration_min":16,"distance":"750m","avg_hr":null}}
+
+  "45 min bike avg HR 138"
+  → {"intent":"TRAINING_LOG","confidence":0.96,"extracted_value":{"sport":"bike","duration_min":45,"distance":null,"avg_hr":138}}
 """
 
 _FALLBACK = {"intent": "MEAL", "confidence": 0.0, "extracted_value": None}
@@ -111,7 +136,7 @@ async def classify_intent(text: str) -> dict:
         result = json.loads(raw)
 
         # Validate required fields
-        if result.get("intent") not in ("MEAL", "METRIC", "SUBJECTIVE", "QUERY"):
+        if result.get("intent") not in ("MEAL", "METRIC", "SUBJECTIVE", "QUERY", "FEAR", "TRAINING_LOG"):
             logger.warning("Router returned unknown intent '%s' — falling back to MEAL.", result.get("intent"))
             return _FALLBACK
 

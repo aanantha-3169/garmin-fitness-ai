@@ -276,6 +276,47 @@ def log_metric(date_str: str, metric_type: str, value: float) -> bool:
         return False
 
 
+# ── HR Max cache (hr_max metric in metric_logs) ──────────────────────────────
+
+_HR_MAX_METRIC = "hr_max"
+
+
+def save_cached_hr_max(hr_max: int) -> bool:
+    """Persist the athlete's observed HRmax to metric_logs.
+
+    Uses today's date as the row key. Old rows are preserved so the history
+    of HRmax observations is queryable. The most recent row is used as the
+    cached fallback by get_cached_hr_max().
+    """
+    from datetime import date
+    return log_metric(date.today().isoformat(), _HR_MAX_METRIC, float(hr_max))
+
+
+def get_cached_hr_max() -> Optional[int]:
+    """Return the most recently saved HRmax from metric_logs, or None.
+
+    Returns None when the DB is unavailable or no HRmax has ever been saved.
+    Callers should fall back to their hardcoded constant in that case.
+    """
+    if not supabase:
+        return None
+    try:
+        res = (
+            supabase.table("metric_logs")
+            .select("value")
+            .eq("metric_type", _HR_MAX_METRIC)
+            .order("date", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            return int(res.data[0]["value"])
+        return None
+    except Exception as exc:
+        logger.error("❌ Failed to fetch cached HRmax: %s", exc)
+        return None
+
+
 def get_weekly_logs(days: int = 7) -> list:
     """Return the last *days* rows from daily_logs ordered oldest-first.
 
@@ -299,6 +340,303 @@ def get_weekly_logs(days: int = 7) -> list:
     except Exception as exc:
         logger.error("❌ Failed to fetch weekly logs: %s", exc)
         return []
+
+
+def log_water_fear(
+    date_str: str,
+    fear_level: int,
+    context_note: str = "",
+    session_type: str = "general",
+) -> bool:
+    """Insert a water fear log entry for *date_str*."""
+    if not supabase:
+        return False
+    try:
+        supabase.table("water_fear_logs").insert({
+            "date": date_str,
+            "fear_level": fear_level,
+            "context_note": context_note or None,
+            "session_type": session_type,
+        }).execute()
+        logger.info("✅ Water fear level %s logged for %s", fear_level, date_str)
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to log water fear for %s: %s", date_str, exc)
+        return False
+
+
+def log_workday_load(date_str: str, load_level: int) -> bool:
+    """Upsert today's workday stress score into principle_compliance."""
+    if not supabase:
+        return False
+    try:
+        supabase.table("principle_compliance").upsert(
+            {"date": date_str, "life_load_score": load_level},
+            on_conflict="date",
+        ).execute()
+        logger.info("✅ Workday load %s logged for %s", load_level, date_str)
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to log workday load for %s: %s", date_str, exc)
+        return False
+
+
+# ── water_fear_logs ─────────────────────────────────────────────────────────
+
+def get_fear_trend(days: int = 30) -> list:
+    """Return fear log entries for the last *days* days, oldest first."""
+    if not supabase:
+        return []
+    try:
+        from datetime import date, timedelta
+        start = (date.today() - timedelta(days=days)).isoformat()
+        res = (
+            supabase.table("water_fear_logs")
+            .select("date, fear_level, context_note, session_type, created_at")
+            .gte("date", start)
+            .order("date", desc=False)
+            .execute()
+        )
+        return res.data or []
+    except Exception as exc:
+        logger.error("❌ Failed to fetch fear trend: %s", exc)
+        return []
+
+
+def get_latest_fear_level() -> Optional[int]:
+    """Return the most recently logged fear level, or None."""
+    if not supabase:
+        return None
+    try:
+        res = (
+            supabase.table("water_fear_logs")
+            .select("fear_level")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0]["fear_level"] if res.data else None
+    except Exception as exc:
+        logger.error("❌ Failed to fetch latest fear level: %s", exc)
+        return None
+
+
+# ── ironman_training_plan ────────────────────────────────────────────────────
+
+def get_planned_sessions(start_date: str, end_date: str) -> list:
+    """Return training plan sessions between *start_date* and *end_date* inclusive."""
+    if not supabase:
+        return []
+    try:
+        res = (
+            supabase.table("ironman_training_plan")
+            .select("*")
+            .gte("date", start_date)
+            .lte("date", end_date)
+            .order("date", desc=False)
+            .execute()
+        )
+        return res.data or []
+    except Exception as exc:
+        logger.error("❌ Failed to fetch planned sessions: %s", exc)
+        return []
+
+
+def get_todays_plan() -> Optional[Dict[str, Any]]:
+    """Return today's training plan session, or None if rest day."""
+    if not supabase:
+        return None
+    try:
+        from datetime import date
+        today = date.today().isoformat()
+        res = (
+            supabase.table("ironman_training_plan")
+            .select("*")
+            .eq("date", today)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+    except Exception as exc:
+        logger.error("❌ Failed to fetch today's plan: %s", exc)
+        return None
+
+
+def get_week_plan(week_offset: int = 0) -> list:
+    """Return all sessions for the week at *week_offset* from the current week.
+
+    week_offset=0 is the current Mon–Sun, 1 is next week, -1 is last week.
+    """
+    if not supabase:
+        return []
+    try:
+        from datetime import date, timedelta
+        today = date.today()
+        week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
+        week_end = week_start + timedelta(days=6)
+        return get_planned_sessions(week_start.isoformat(), week_end.isoformat())
+    except Exception as exc:
+        logger.error("❌ Failed to fetch week plan: %s", exc)
+        return []
+
+
+def upsert_training_plan(sessions: list) -> bool:
+    """Bulk-upsert a list of session dicts into ironman_training_plan.
+
+    Sessions with an 'id' key are updated in place; new sessions are inserted.
+    """
+    if not supabase:
+        return False
+    try:
+        supabase.table("ironman_training_plan").upsert(sessions).execute()
+        logger.info("✅ Upserted %d training plan sessions.", len(sessions))
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to upsert training plan: %s", exc)
+        return False
+
+
+def mark_garmin_scheduled(plan_id: int) -> bool:
+    """Set garmin_scheduled=True for the given plan row id."""
+    if not supabase:
+        return False
+    try:
+        supabase.table("ironman_training_plan").update(
+            {"garmin_scheduled": True}
+        ).eq("id", plan_id).execute()
+        logger.info("✅ Marked plan id=%s as Garmin scheduled.", plan_id)
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to mark plan id=%s scheduled: %s", plan_id, exc)
+        return False
+
+
+# ── principle_compliance ─────────────────────────────────────────────────────
+
+def log_compliance(date_str: str, data: Dict[str, Any]) -> bool:
+    """Upsert a full compliance record for *date_str*.
+
+    *data* may contain any subset of principle_compliance columns.
+    """
+    if not supabase:
+        return False
+    try:
+        supabase.table("principle_compliance").upsert(
+            {"date": date_str, **data},
+            on_conflict="date",
+        ).execute()
+        logger.info("✅ Compliance record upserted for %s.", date_str)
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to log compliance for %s: %s", date_str, exc)
+        return False
+
+
+def get_compliance_trend(days: int = 14) -> list:
+    """Return compliance rows for the last *days* days, oldest first."""
+    if not supabase:
+        return []
+    try:
+        from datetime import date, timedelta
+        start = (date.today() - timedelta(days=days)).isoformat()
+        res = (
+            supabase.table("principle_compliance")
+            .select("*")
+            .gte("date", start)
+            .order("date", desc=False)
+            .execute()
+        )
+        return res.data or []
+    except Exception as exc:
+        logger.error("❌ Failed to fetch compliance trend: %s", exc)
+        return []
+
+
+# ── probability_snapshots ────────────────────────────────────────────────────
+
+def save_probability_snapshot(date_str: str, scores: Dict[str, Any]) -> bool:
+    """Insert a probability snapshot row for *date_str*.
+
+    *scores* should contain overall_score and component keys matching the table.
+    """
+    if not supabase:
+        return False
+    try:
+        supabase.table("probability_snapshots").insert(
+            {"date": date_str, **scores}
+        ).execute()
+        logger.info("✅ Probability snapshot saved for %s.", date_str)
+        return True
+    except Exception as exc:
+        logger.error("❌ Failed to save probability snapshot for %s: %s", date_str, exc)
+        return False
+
+
+def get_probability_trend(days: int = 90) -> list:
+    """Return probability snapshots for the last *days* days, oldest first."""
+    if not supabase:
+        return []
+    try:
+        from datetime import date, timedelta
+        start = (date.today() - timedelta(days=days)).isoformat()
+        res = (
+            supabase.table("probability_snapshots")
+            .select("*")
+            .gte("date", start)
+            .order("date", desc=False)
+            .execute()
+        )
+        return res.data or []
+    except Exception as exc:
+        logger.error("❌ Failed to fetch probability trend: %s", exc)
+        return []
+
+
+def get_latest_probability() -> Optional[Dict[str, Any]]:
+    """Return the most recent probability snapshot row, or None."""
+    if not supabase:
+        return None
+    try:
+        res = (
+            supabase.table("probability_snapshots")
+            .select("*")
+            .order("date", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+    except Exception as exc:
+        logger.error("❌ Failed to fetch latest probability: %s", exc)
+        return None
+
+
+# ── Dashboard aggregate ──────────────────────────────────────────────────────
+
+def get_dashboard_data() -> Dict[str, Any]:
+    """Return everything the dashboard needs in a single call.
+
+    Keys returned:
+      today_log        — daily_logs row for today
+      today_plan       — ironman_training_plan row for today (or None)
+      latest_prob      — most recent probability_snapshots row
+      prob_trend       — last 30 days of probability snapshots
+      compliance_trend — last 14 days of principle_compliance rows
+      fear_trend       — last 30 days of water_fear_logs rows
+      next_14_days     — ironman_training_plan rows for next 14 days
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    return {
+        "today_log":        get_daily_log(today.isoformat()),
+        "today_plan":       get_todays_plan(),
+        "latest_prob":      get_latest_probability(),
+        "prob_trend":       get_probability_trend(days=30),
+        "compliance_trend": get_compliance_trend(days=14),
+        "fear_trend":       get_fear_trend(days=30),
+        "next_14_days":     get_planned_sessions(
+            today.isoformat(),
+            (today + timedelta(days=13)).isoformat(),
+        ),
+    }
 
 
 def load_garmin_tokens() -> Optional[Dict[str, str]]:

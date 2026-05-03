@@ -55,6 +55,33 @@ def _extract_telemetry(activity: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _calculate_pace_100m(distance_m: float, duration_secs: float) -> Optional[str]:
+    """Return average pace per 100 m as MM:SS string, or None if inputs are missing."""
+    if not distance_m or not duration_secs:
+        return None
+    secs_per_100m = (duration_secs / distance_m) * 100
+    mins = int(secs_per_100m // 60)
+    secs = int(secs_per_100m % 60)
+    return f"{mins}:{secs:02d}"
+
+
+def _extract_swim_telemetry(activity: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract swim-specific fields on top of the base telemetry."""
+    base = _extract_telemetry(activity)
+    base.update({
+        "swim_stroke_type":       activity.get("strokeType", {}).get("strokeTypeKey"),
+        "avg_strokes_per_length": activity.get("avgStrokes"),
+        "pool_length_meters":     activity.get("poolLength"),
+        "num_lengths":            activity.get("numActiveLengths"),
+        "total_distance_meters":  activity.get("distance"),
+        "avg_pace_per_100m":      _calculate_pace_100m(
+            activity.get("distance"), activity.get("duration")
+        ),
+        "best_pace_per_100m":     activity.get("minPace100m"),
+    })
+    return base
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def sync_todays_workout(client: Garmin, target_date: Optional[date] = None) -> Optional[Dict[str, Any]]:
@@ -88,7 +115,11 @@ def sync_todays_workout(client: Garmin, target_date: Optional[date] = None) -> O
         logger.info("All activities for %s were under 10 minutes — skipping.", date_str)
         return None
 
-    telemetry = _extract_telemetry(activity)
+    activity_type = activity.get("activityType", {}).get("typeKey", "")
+    if "swimming" in activity_type:
+        telemetry = _extract_swim_telemetry(activity)
+    else:
+        telemetry = _extract_telemetry(activity)
 
     from db_manager import save_completed_workout
     save_completed_workout(date_str, telemetry)
@@ -132,4 +163,19 @@ def format_execution_context(telemetry: Dict[str, Any]) -> str:
         parts.append(f"VO2Max: {telemetry['vo2max_value']:.1f}")
 
     # First item is the label, rest join as a single line
-    return parts[0] + "\n" + " | ".join(parts[1:])
+    summary = parts[0] + "\n" + " | ".join(parts[1:])
+
+    # Append swim-specific line when present
+    swim_parts = []
+    if telemetry.get("total_distance_meters"):
+        swim_parts.append(f"Distance: {telemetry['total_distance_meters']:.0f} m")
+    if telemetry.get("avg_pace_per_100m"):
+        swim_parts.append(f"Avg pace: {telemetry['avg_pace_per_100m']}/100m")
+    if telemetry.get("num_lengths"):
+        swim_parts.append(f"Lengths: {telemetry['num_lengths']}")
+    if telemetry.get("swim_stroke_type"):
+        swim_parts.append(f"Stroke: {telemetry['swim_stroke_type']}")
+    if swim_parts:
+        summary += "\n" + " | ".join(swim_parts)
+
+    return summary

@@ -1,0 +1,6 @@
+fastapi
+supabase
+python-dotenv
+pydantic
+garminconnect
+garth

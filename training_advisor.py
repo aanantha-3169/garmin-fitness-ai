@@ -17,6 +17,7 @@ Usage:
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -44,6 +45,22 @@ class TrainingDecision(BaseModel):
     target_calories: int = Field(
         description="Calorie target for the day: Garmin total_calories + 250 surplus."
     )
+    zone2_target_hr_low: int = Field(
+        default=115,
+        description="Lower bound of Zone 2 heart rate target (bpm).",
+    )
+    zone2_target_hr_high: int = Field(
+        default=145,
+        description="Upper bound of Zone 2 heart rate target (bpm).",
+    )
+    principle_violations: list[str] = Field(
+        default_factory=list,
+        description="Principles from PRINCIPLES.md that this recommendation would break, if any.",
+    )
+    water_fear_note: Optional[str] = Field(
+        default=None,
+        description="For swim sessions only: note acknowledging any water fear context.",
+    )
     philosophical_reflection: Optional[str] = Field(
         default=None,
         description=(
@@ -55,7 +72,17 @@ class TrainingDecision(BaseModel):
 
 # ── Prompt Construction ──────────────────────────────────────────────────────
 
-_SYSTEM_PROMPT = """\
+_PRINCIPLES = Path("docs/PRINCIPLES.md").read_text()
+_SPORT_SCIENCE = Path("docs/SPORT_SCIENCE.md").read_text()
+
+_SYSTEM_PROMPT = f"""\
+{_PRINCIPLES}
+
+{_SPORT_SCIENCE}
+
+"""  # coach rules appended below
+
+_SYSTEM_PROMPT += """\
 You are an elite sports-performance AI coach. You analyze Garmin wearable
 data and make evidence-based training decisions.
 

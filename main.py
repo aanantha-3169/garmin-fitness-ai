@@ -39,6 +39,8 @@ from meal_tracker_bot import (
     _cmd_start,
     _cmd_today,
     _cmd_reset,
+    _cmd_fear,
+    _cmd_load,
     _handle_photo,
     _handle_meal_callback,
     _handle_message,
@@ -234,6 +236,8 @@ def main():
     # Meal Tracker Handlers
     application.add_handler(CommandHandler("today", _cmd_today))
     application.add_handler(CommandHandler("reset", _cmd_reset))
+    application.add_handler(CommandHandler("fear", _cmd_fear))
+    application.add_handler(CommandHandler("load", _cmd_load))
     application.add_handler(MessageHandler(filters.PHOTO, _handle_photo))
     application.add_handler(CallbackQueryHandler(_handle_meal_callback, pattern="^meal_"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_message))

@@ -1,21 +1,24 @@
 """
 garmin_scheduler.py — Schedule workouts on the Garmin Connect calendar.
 
-Weekly training block (7-week program):
-  • Monday    — PT Session (strength/functional with personal trainer)
-  • Tuesday   — Easy Run 5–7 km  (distance set by morning readiness check)
-  • Wednesday — PT Session
-  • Thursday  — PT Session
-  • Friday    — Rest Day (nothing scheduled)
-  • Saturday  — Badminton
-  • Sunday    — Zone 2 Long Run (90 min)
+Phase-aware triathlon periodization schedule targeting:
+  • Aquaman Sprint Triathlon  — 2026-07-25
+  • Bintan 70.3               — 2026-10-12
+  • Ironman Malaysia          — 2026-11-21
+
+Phases (derived from days-to-race):
+  base         — >60 days to Aquaman; Zone 2 aerobic base building
+  build        — 21–60 days to Aquaman; volume increase
+  pre_aquaman  — ≤21 days to Aquaman; race-specific sharpening
+  taper_bintan — ≤14 days to Bintan; volume cut for 70.3
+  taper_ironman — ≤14 days to Ironman; maximum taper
 
 Usage:
     from garmin_client import get_garmin_client
     from garmin_scheduler import schedule_training_block
 
     client = get_garmin_client()
-    schedule_training_block(client, weeks=7)
+    schedule_training_block(client, weeks=4)
 """
 
 import logging
@@ -27,52 +30,147 @@ from garminconnect import Garmin
 logger = logging.getLogger(__name__)
 
 # ── Sport type constants ─────────────────────────────────────────────────────
-SPORT_STRENGTH  = {"sportTypeId": 5,  "sportTypeKey": "strength_training"}
-SPORT_RUNNING   = {"sportTypeId": 1,  "sportTypeKey": "running"}
-SPORT_BADMINTON = {"sportTypeId": 63, "sportTypeKey": "racket_sports"}
+SPORT_RUNNING     = {"sportTypeId": 1,  "sportTypeKey": "running",           "displayOrder": 1}
+SPORT_CYCLING     = {"sportTypeId": 2,  "sportTypeKey": "cycling",           "displayOrder": 2}
+SPORT_SWIMMING    = {"sportTypeId": 4,  "sportTypeKey": "swimming",          "displayOrder": 3}
+SPORT_MULTISPORT  = {"sportTypeId": 5,  "sportTypeKey": "multi_sport",       "displayOrder": 5}
+SPORT_OTHER       = {"sportTypeId": 8,  "sportTypeKey": "other",             "displayOrder": 8}
+SPORT_STRENGTH    = {"sportTypeId": 13, "sportTypeKey": "strength_training", "displayOrder": 13}
 
 
-# ── Weekly schedule definition ───────────────────────────────────────────────
+# ── Phase detection ──────────────────────────────────────────────────────────
 # weekday(): Mon=0 Tue=1 Wed=2 Thu=3 Fri=4 Sat=5 Sun=6
 
-_WEEKLY_SCHEDULE = {
-    0: {  # Monday
-        "name": "PT Session",
-        "sport_type": SPORT_STRENGTH,
-        "description": "Personal trainer session — strength & functional movement",
-        "duration_minutes": 60,
-    },
-    1: {  # Tuesday
-        "name": "Easy Run 5–7 km",
-        "sport_type": SPORT_RUNNING,
-        "description": "Easy aerobic run. Target distance 5 km (low readiness) to 7 km (high readiness).",
-        "duration_minutes": 45,
-    },
-    2: {  # Wednesday
-        "name": "PT Session",
-        "sport_type": SPORT_STRENGTH,
-        "description": "Personal trainer session — strength & functional movement",
-        "duration_minutes": 60,
-    },
-    3: {  # Thursday
-        "name": "PT Session",
-        "sport_type": SPORT_STRENGTH,
-        "description": "Personal trainer session — strength & functional movement",
-        "duration_minutes": 60,
-    },
-    # Friday (4) — rest, nothing scheduled
-    5: {  # Saturday
-        "name": "Badminton",
-        "sport_type": SPORT_BADMINTON,
-        "description": "Badminton match / recreational play",
-        "duration_minutes": 90,
-    },
-    6: {  # Sunday
-        "name": "Zone 2 Long Run",
-        "sport_type": SPORT_RUNNING,
-        "description": "Zone 2 steady-state aerobic run",
-        "duration_minutes": 90,
-    },
+def get_phase(today: date = None) -> str:
+    """Return current training phase based on days to each checkpoint."""
+    if today is None:
+        today = date.today()
+    aquaman  = date(2026, 7, 25)
+    bintan   = date(2026, 10, 12)
+    ironman  = date(2026, 11, 21)
+
+    days_to_ironman  = (ironman  - today).days
+    days_to_bintan   = (bintan   - today).days
+    days_to_aquaman  = (aquaman  - today).days
+
+    if days_to_ironman <= 14:
+        return "taper_ironman"
+    elif days_to_bintan <= 14:
+        return "taper_bintan"
+    elif days_to_aquaman <= 21:
+        return "pre_aquaman"
+    elif days_to_aquaman > 60:
+        return "base"
+    else:
+        return "build"
+
+
+# ── Phase schedules ──────────────────────────────────────────────────────────
+
+_BASE_SCHEDULE = {
+    0: {"name": "Zone 2 Swim", "sport_type": SPORT_SWIMMING,
+        "description": "Pool swim. Zone 2 HR 115-145. Focus: catch-up drill + continuous laps.",
+        "duration_minutes": 45, "hr_target": (115, 145)},
+    1: {"name": "Zone 2 Run", "sport_type": SPORT_RUNNING,
+        "description": "Easy aerobic run. 6:20-7:00/km. Do not exceed 145 bpm.",
+        "duration_minutes": 45, "hr_target": (115, 145)},
+    2: {"name": "Zone 2 Swim", "sport_type": SPORT_SWIMMING,
+        "description": "Pool swim. Technique focus. Continuous 400m blocks.",
+        "duration_minutes": 45, "hr_target": (115, 145)},
+    3: {"name": "Zone 2 Bike", "sport_type": SPORT_CYCLING,
+        "description": "Outdoor or indoor bike. Strict Zone 2. 115-145 bpm.",
+        "duration_minutes": 75, "hr_target": (115, 145)},
+    4: None,  # Rest / mobility
+    5: {"name": "Zone 2 Bike (Brother Session)", "sport_type": SPORT_CYCLING,
+        "description": "Outdoor ride with brother if available. Zone 2 always.",
+        "duration_minutes": 90, "hr_target": (115, 145), "brother_session": True},
+    6: {"name": "Long Zone 2 Brick", "sport_type": SPORT_MULTISPORT,
+        "description": "Bike 60-75 min then run 15-20 min. Both in Zone 2.",
+        "duration_minutes": 90, "hr_target": (115, 145)},
+}
+
+_BUILD_SCHEDULE = {
+    0: {"name": "Zone 2 Swim", "sport_type": SPORT_SWIMMING,
+        "description": "Pool swim. Zone 2 HR 115-145. Build to 1500m continuous.",
+        "duration_minutes": 60, "hr_target": (115, 145)},
+    1: {"name": "Zone 2 Run", "sport_type": SPORT_RUNNING,
+        "description": "Easy aerobic run. 6:20-7:00/km. Do not exceed 145 bpm.",
+        "duration_minutes": 60, "hr_target": (115, 145)},
+    2: {"name": "Zone 2 Bike", "sport_type": SPORT_CYCLING,
+        "description": "Outdoor or indoor bike. Strict Zone 2. 115-145 bpm.",
+        "duration_minutes": 90, "hr_target": (115, 145)},
+    3: {"name": "Zone 2 Swim", "sport_type": SPORT_SWIMMING,
+        "description": "Pool swim. Continuous sets. Build open-water comfort.",
+        "duration_minutes": 60, "hr_target": (115, 145)},
+    4: None,  # Rest / mobility
+    5: {"name": "Zone 2 Bike (Brother Session)", "sport_type": SPORT_CYCLING,
+        "description": "Outdoor ride with brother if available. Zone 2 always.",
+        "duration_minutes": 120, "hr_target": (115, 145), "brother_session": True},
+    6: {"name": "Long Zone 2 Brick", "sport_type": SPORT_MULTISPORT,
+        "description": "Bike 75-90 min then run 20-25 min. Both in Zone 2.",
+        "duration_minutes": 120, "hr_target": (115, 145)},
+}
+
+_PRE_AQUAMAN_SCHEDULE = {
+    0: {"name": "Swim Sharpener", "sport_type": SPORT_SWIMMING,
+        "description": "Pool swim. Race-pace 100m efforts. Simulate sprint distance.",
+        "duration_minutes": 45, "hr_target": (115, 155)},
+    1: {"name": "Easy Run", "sport_type": SPORT_RUNNING,
+        "description": "Short easy run. Keep HR under 140. Legs fresh.",
+        "duration_minutes": 30, "hr_target": (115, 140)},
+    2: {"name": "Race Brick", "sport_type": SPORT_MULTISPORT,
+        "description": "Bike 45 min Zone 2, then run 15 min at race effort.",
+        "duration_minutes": 60, "hr_target": (115, 150)},
+    3: None,  # Rest / mobility
+    4: None,  # Rest
+    5: {"name": "Zone 2 Bike (Brother Session)", "sport_type": SPORT_CYCLING,
+        "description": "Easy ride. Keep it casual. Save legs for race week.",
+        "duration_minutes": 60, "hr_target": (115, 135), "brother_session": True},
+    6: {"name": "Easy Swim + Strides", "sport_type": SPORT_SWIMMING,
+        "description": "Relaxed pool swim. 4x50m strides at end. Stay calm.",
+        "duration_minutes": 30, "hr_target": (115, 140)},
+}
+
+_TAPER_BINTAN_SCHEDULE = {
+    0: {"name": "Easy Swim", "sport_type": SPORT_SWIMMING,
+        "description": "30 min easy pool swim. Smooth, no effort. Muscle memory only.",
+        "duration_minutes": 30, "hr_target": (110, 135)},
+    1: {"name": "Easy Run", "sport_type": SPORT_RUNNING,
+        "description": "20-30 min easy jog. Below 135 bpm. Just move.",
+        "duration_minutes": 25, "hr_target": (110, 135)},
+    2: {"name": "Easy Bike", "sport_type": SPORT_CYCLING,
+        "description": "45 min easy spin. Zone 2 only. No pushing.",
+        "duration_minutes": 45, "hr_target": (110, 135)},
+    3: None,  # Rest
+    4: None,  # Rest
+    5: {"name": "Short Brick", "sport_type": SPORT_MULTISPORT,
+        "description": "Bike 30 min + Run 10 min. Easy pace. Shake out legs.",
+        "duration_minutes": 40, "hr_target": (110, 140)},
+    6: None,  # Rest / Race visualization
+}
+
+_TAPER_IRONMAN_SCHEDULE = {
+    0: {"name": "Easy Swim", "sport_type": SPORT_SWIMMING,
+        "description": "20 min easy swim. Drills only. Do not raise HR.",
+        "duration_minutes": 20, "hr_target": (110, 130)},
+    1: {"name": "Easy Run", "sport_type": SPORT_RUNNING,
+        "description": "20 min jog. Very easy. Below 130 bpm.",
+        "duration_minutes": 20, "hr_target": (110, 130)},
+    2: {"name": "Easy Bike", "sport_type": SPORT_CYCLING,
+        "description": "30 min easy spin. Just keep the legs moving.",
+        "duration_minutes": 30, "hr_target": (110, 130)},
+    3: None,  # Rest
+    4: None,  # Rest
+    5: None,  # Rest / Race visualization
+    6: None,  # Rest
+}
+
+_SCHEDULE_BY_PHASE: Dict[str, Dict] = {
+    "base":          _BASE_SCHEDULE,
+    "build":         _BUILD_SCHEDULE,
+    "pre_aquaman":   _PRE_AQUAMAN_SCHEDULE,
+    "taper_bintan":  _TAPER_BINTAN_SCHEDULE,
+    "taper_ironman": _TAPER_IRONMAN_SCHEDULE,
 }
 
 
@@ -131,6 +229,7 @@ def _create_workout(
                         "endCondition": {
                             "conditionTypeId": 7,
                             "conditionTypeKey": "iterations",
+                            "displayable": False,
                         },
                         "endConditionValue": 1,
                     }
@@ -172,8 +271,9 @@ def _schedule_workout_on_date(client: Garmin, workout_id: int, target_date: date
 # ── Public API ───────────────────────────────────────────────────────────────
 
 def get_planned_workout(target_date: date) -> Optional[Dict[str, Any]]:
-    """Return the workout definition for *target_date*, or None for rest days."""
-    return _WEEKLY_SCHEDULE.get(target_date.weekday())
+    """Return the phase-appropriate workout for *target_date*, or None for rest days."""
+    phase = get_phase(target_date)
+    return _SCHEDULE_BY_PHASE[phase].get(target_date.weekday())
 
 
 def schedule_workout(
@@ -233,9 +333,9 @@ def schedule_training_block(
 
     for offset in range(total_days):
         d = start_date + timedelta(days=offset)
-        planned = _WEEKLY_SCHEDULE.get(d.weekday())
+        planned = get_planned_workout(d)
         if planned is None:
-            continue  # Friday — rest day
+            continue  # rest day
 
         month_key = d.strftime("%Y-%m")
         if month_key not in cached_months:

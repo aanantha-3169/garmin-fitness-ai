@@ -503,6 +503,64 @@ async def _handle_metric(update: Update, extracted_value: Optional[dict]) -> Non
         )
 
 
+async def _cmd_fear(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /fear [1-10] — log today's water fear level."""
+    from db_manager import log_water_fear
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text(
+            "📊 Log your water fear level: /fear [1-10]\n"
+            "1 = completely calm, 10 = full panic response"
+        )
+        return
+
+    level = int(args[0])
+    if not 1 <= level <= 10:
+        await update.message.reply_text("⚠️ Level must be between 1 and 10.")
+        return
+
+    log_water_fear(date.today().isoformat(), level)
+
+    if level <= 3:
+        note = "Building that calm baseline 🌊"
+    elif level <= 6:
+        note = "Normal. Keep showing up. The water gets quieter."
+    else:
+        note = "Noted. Rest is okay. Fear is information, not failure."
+
+    await update.message.reply_text(f"💧 Fear level {level}/10 logged.\n{note}")
+
+
+async def _cmd_load(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /load [1-10] — log today's workday stress level."""
+    from db_manager import log_workday_load
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text(
+            "📊 Log your workday stress: /load [1-10]\n"
+            "1 = completely free day, 10 = back-to-back meetings all day"
+        )
+        return
+
+    level = int(args[0])
+    if not 1 <= level <= 10:
+        await update.message.reply_text("⚠️ Level must be between 1 and 10.")
+        return
+
+    log_workday_load(date.today().isoformat(), level)
+
+    if level <= 3:
+        note = "Light day. Full session is a go."
+    elif level <= 6:
+        note = "Manageable. Train as planned, monitor how you feel."
+    elif level <= 8:
+        note = "Heavy day. Consider a shorter session or Zone 2 only."
+    else:
+        note = "Brutal day. Rest is a legitimate training choice."
+
+    await update.message.reply_text(f"💼 Load {level}/10 logged.\n{note}")
+
+
 async def _handle_query(update: Update, text: str) -> None:
     """Answer a general question using Gemini with today's nutrition context."""
     chat_id = str(update.effective_chat.id)
@@ -563,6 +621,11 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_metric(update, intent_result.get("extracted_value"))
     elif intent == "QUERY":
         await _handle_query(update, text)
+    elif intent == "FEAR":
+        await update.message.reply_text(
+            "💧 Noted. Use /fear [1-10] to log your fear level so I can track the trend.\n"
+            "e.g. /fear 4"
+        )
     else:
         # MEAL — existing flow
         context.user_data.pop("pending_photo", None)

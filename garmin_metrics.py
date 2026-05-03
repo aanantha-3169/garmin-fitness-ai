@@ -152,7 +152,68 @@ def _extract_activities(client: Garmin, cdate: str) -> list:
     return _safe_call("activities", client.get_activities_by_date, cdate, cdate) or []
 
 
+# ── HRmax ─────────────────────────────────────────────────────────────────────
+
+# Last-resort fallback if Garmin is unreachable AND the DB cache is empty.
+# Update this when a new confirmed max is observed during a field test.
+HR_MAX_FALLBACK = 196  # observed during run, May 2026
+
+
+def get_hr_max(client: Optional[Garmin] = None) -> int:
+    """Return the athlete's current observed HRmax.
+
+    Resolution order (first success wins):
+      1. Garmin API  — client.get_stats() -> maxHeartRate
+      2. DB cache    — most recent 'hr_max' row in metric_logs
+      3. Hardcoded   — HR_MAX_FALLBACK constant (update after confirmed field test)
+
+    When the Garmin API returns a value higher than the cached value it is
+    immediately persisted to the DB so future fallbacks are up to date.
+
+    Args:
+        client: Authenticated Garmin client. Pass None to skip API fetch
+                and use the DB/hardcoded fallback directly.
+
+    Returns:
+        HRmax as an int (always >= 1).
+    """
+    from db_manager import get_cached_hr_max, save_cached_hr_max
+
+    garmin_value: Optional[int] = None
+
+    # 1. Try Garmin API
+    if client is not None:
+        stats = _safe_call("user stats", client.get_stats, date.today().isoformat())
+        if stats:
+            raw = stats.get("maxHeartRate") or stats.get("userMaxHeartRate")
+            if raw and int(raw) > 0:
+                garmin_value = int(raw)
+                logger.info("❤️  Garmin HRmax from API: %d bpm", garmin_value)
+
+    # 2. Try DB cache
+    cached_value = get_cached_hr_max()
+
+    # Persist to DB if API returned a new high
+    if garmin_value is not None:
+        if cached_value is None or garmin_value > cached_value:
+            save_cached_hr_max(garmin_value)
+            logger.info("💾  HRmax updated in DB cache: %d bpm", garmin_value)
+        return garmin_value
+
+    if cached_value is not None:
+        logger.info("❤️  HRmax from DB cache: %d bpm", cached_value)
+        return cached_value
+
+    # 3. Hardcoded fallback
+    logger.warning(
+        "⚠️  Could not fetch HRmax from Garmin or DB. Using fallback: %d bpm",
+        HR_MAX_FALLBACK,
+    )
+    return HR_MAX_FALLBACK
+
+
 # ── Public API ───────────────────────────────────────────────────────────────
+
 
 def get_health_metrics(client: Garmin) -> Dict[str, Any]:
     """Retrieve a comprehensive set of health metrics.
