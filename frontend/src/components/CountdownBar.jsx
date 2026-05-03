@@ -96,9 +96,13 @@ export default function CountdownBar({ checkpoints = [] }) {
           <div style={s.daysLabel}>DAYS</div>
           <div style={s.name}>{event.name.toUpperCase()}</div>
           <div style={s.purpose}>{event.purpose}</div>
-          {event.readiness_score !== undefined && (
+          {event.readiness_score != null ? (
             <div style={s.readinessBadge(event.readiness_score)}>
               READINESS {event.readiness_score}%
+            </div>
+          ) : (
+            <div style={s.readinessBadge(0)}>
+              READINESS —
             </div>
           )}
         </div>

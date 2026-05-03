@@ -95,6 +95,11 @@ def _map_activity_type(raw: str) -> str:
     return "other"
 
 
+def _disciplines_match(completed_raw: str, planned_discipline: str) -> bool:
+    """Return True if the completed Garmin activity type matches the planned discipline."""
+    return _map_activity_type(completed_raw) == planned_discipline
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
@@ -110,9 +115,10 @@ def today():
     hr_max    = get_athlete_hr_max()
     z2_low, z2_high = sport_science.zone2_bounds(hr_max)
 
-    log  = db_manager.get_daily_log(today_str)
-    plan = db_manager.get_todays_plan()
-    fear = db_manager.get_latest_fear_level()
+    log       = db_manager.get_daily_log(today_str)
+    plan      = db_manager.get_todays_plan()
+    fear      = db_manager.get_latest_fear_level()
+    completed = db_manager.get_completed_workout(today_str)
 
     # Extract nested morning briefing sub-dicts
     briefing = _safe_get(log, "morning_briefing_json", default={})
@@ -138,6 +144,27 @@ def today():
         "meal_count":         _safe_get(log, "meal_count",         default=0),
     }
 
+    # Build completed-activity block from Garmin sync (None when not yet synced)
+    completed_block = None
+    if completed:
+        dur_secs = completed.get("duration_seconds") or 0
+        completed_block = {
+            "activity_type":  _map_activity_type(completed.get("activity_type") or ""),
+            "activity_name":  completed.get("activity_name"),
+            "duration_mins":  round(dur_secs / 60) if dur_secs else None,
+            "avg_heart_rate": completed.get("avg_heart_rate"),
+        }
+
+    # Determine completion and deviation against the plan
+    is_completed = False
+    deviation    = False
+    if plan and completed:
+        is_completed = _disciplines_match(completed.get("activity_type") or "", plan.get("discipline") or "")
+        deviation    = not is_completed
+    elif completed and not plan:
+        is_completed = True
+        deviation    = True  # trained on a rest day
+
     if plan:
         session = {
             "planned_name":   plan.get("session_name"),
@@ -146,8 +173,10 @@ def today():
             "hr_target_low":  plan.get("hr_target_low", z2_low),
             "hr_target_high": plan.get("hr_target_high", z2_high),
             "description":    plan.get("description", ""),
-            "is_completed":   False,
+            "is_completed":   is_completed,
             "is_rest_day":    False,
+            "deviation":      deviation,
+            "completed":      completed_block,
         }
     else:
         session = {
@@ -157,8 +186,10 @@ def today():
             "hr_target_low":  None,
             "hr_target_high": None,
             "description":    "Recovery. Prioritise sleep and nutrition.",
-            "is_completed":   False,
+            "is_completed":   is_completed,
             "is_rest_day":    True,
+            "deviation":      deviation,
+            "completed":      completed_block,
         }
 
     readiness = {

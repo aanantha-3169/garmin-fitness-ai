@@ -10,7 +10,8 @@
  *     nutrition: { consumed_calories, target_calories, consumed_protein_g,
  *                  consumed_carbs_g, consumed_fats_g, meal_count },
  *     session: { planned_name, discipline, duration_mins, hr_target_low,
- *                hr_target_high, description, is_completed, is_rest_day },
+ *                hr_target_high, description, is_completed, is_rest_day,
+ *                deviation, completed: { activity_type, activity_name, duration_mins, avg_heart_rate } },
  *     readiness: { recommended_action, adjustment_needed, principle_violations,
  *                  philosophical_reflection },
  *     water_fear_level,
@@ -219,7 +220,9 @@ export default function TodayPanel({ data }) {
             {disciplineIcon(session.discipline)} {session.planned_name || "Rest Day"}
           </div>
           <span style={s.sessionBadge}>
-            {session.is_completed ? "✓ DONE" : session.is_rest_day ? "REST" : "PENDING"}
+            {session.is_completed
+              ? session.deviation ? "⚡ DIFF ACTIVITY" : "✓ DONE"
+              : session.is_rest_day ? "REST" : "PENDING"}
           </span>
         </div>
         {!session.is_rest_day && (
@@ -237,6 +240,31 @@ export default function TodayPanel({ data }) {
               </div>
             )}
           </>
+        )}
+        {session.completed && (
+          <div style={{
+            marginTop: "10px",
+            paddingTop: "10px",
+            borderTop: `1px solid ${tokens.border}`,
+            display: "flex",
+            gap: "16px",
+            fontSize: "10px",
+            letterSpacing: "1px",
+            fontFamily: tokens.fontMono,
+            color: tokens.textSecondary,
+            flexWrap: "wrap",
+          }}>
+            <span style={{ color: disciplineColor(session.completed.activity_type) }}>
+              {disciplineIcon(session.completed.activity_type)}{" "}
+              {session.completed.activity_name || session.completed.activity_type?.toUpperCase()}
+            </span>
+            {session.completed.duration_mins && (
+              <span>{session.completed.duration_mins} MIN</span>
+            )}
+            {session.completed.avg_heart_rate && (
+              <span>{session.completed.avg_heart_rate} BPM AVG</span>
+            )}
+          </div>
         )}
       </div>
 
