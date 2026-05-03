@@ -3,44 +3,29 @@
 // Setup:
 //   1. Install the Scriptable app (iOS).
 //   2. Paste this file into a new Scriptable script.
-//   3. Set API_BASE to your deployed Vercel API URL.
+//   3. Set API_BASE to your deployed Vercel API URL (no trailing slash).
 //   4. Add a Scriptable widget to your home screen, choose this script.
 //   5. Set widget size to "Medium" for best layout.
 
-const API_BASE = "https://your-vercel-app.vercel.app"; // ← replace with real URL
+const API_BASE = "https://garmin-fitness-ai.vercel.app"; // no trailing slash
 
-// ── Palette (matches dashboard dark terminal aesthetic) ───────────────────────
+// ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
-  bg:       new Color("#0a0a0a"),
-  card:     new Color("#111111"),
-  gold:     new Color("#C4A35A"),
-  dim:      new Color("#888888"),
-  white:    new Color("#F0F0F0"),
-  red:      new Color("#E05C5C"),
-  green:    new Color("#5CE07A"),
+  bg:    new Color("#0a0a0a"),
+  gold:  new Color("#C4A35A"),
+  dim:   new Color("#666666"),
+  muted: new Color("#444444"),
+  white: new Color("#F0F0F0"),
+  red:   new Color("#E05C5C"),
+  green: new Color("#5CB85C"),
 };
 
-// ── Fetch data ────────────────────────────────────────────────────────────────
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 
-async function fetchToday() {
-  const req = new Request(`${API_BASE}/api/today`);
+async function fetchJson(path) {
+  const req = new Request(`${API_BASE}${path}`);
   req.timeoutInterval = 8;
-  try {
-    return await req.loadJSON();
-  } catch {
-    return null;
-  }
-}
-
-async function fetchProbability() {
-  const req = new Request(`${API_BASE}/api/probability`);
-  req.timeoutInterval = 8;
-  try {
-    const data = await req.loadJSON();
-    return data?.latest?.overall_score ?? null;
-  } catch {
-    return null;
-  }
+  try { return await req.loadJSON(); } catch { return null; }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -53,107 +38,116 @@ function addText(container, text, font, color, lines = 1) {
   return el;
 }
 
-function phaseLabel(phase) {
-  const map = {
-    base:          "BASE",
-    build:         "BUILD",
-    pre_aquaman:   "PRE-AQUAMAN",
-    taper_bintan:  "TAPER",
-    taper_ironman: "TAPER",
-  };
-  return map[phase] ?? (phase ?? "—").toUpperCase();
+function disciplineIcon(d) {
+  return { swim: "🏊", run: "🏃", bike: "🚴", brick: "🔁", rest: "😴" }[d] ?? "🎯";
 }
 
-// ── Widget layout ─────────────────────────────────────────────────────────────
+// ── Widget ────────────────────────────────────────────────────────────────────
 
-async function buildWidget(today, probScore) {
+async function buildWidget(today, checkpoints, week) {
   const w = new ListWidget();
   w.backgroundColor = C.bg;
-  w.setPadding(14, 16, 14, 16);
+  w.setPadding(12, 14, 12, 14);
 
   if (!today) {
-    addText(w, "⚡ Ironman Pipeline", Font.boldSystemFont(13), C.gold);
+    addText(w, "IRONMAN PIPELINE", Font.boldSystemFont(11), C.gold);
     w.addSpacer(6);
-    addText(w, "Could not reach API.", Font.systemFont(12), C.dim);
-    addText(w, API_BASE, Font.systemFont(10), C.dim);
+    addText(w, "Could not reach API.", Font.systemFont(11), C.dim);
+    addText(w, API_BASE, Font.systemFont(9), C.dim);
     return w;
   }
 
-  // ── Row 1: phase tag + days to Aquaman ───────────────────────────────────
+  const session   = today.session ?? {};
+  const completed = session.completed ?? null;
+
+  // ── Row 1: next event + countdown ────────────────────────────────────────
   const header = w.addStack();
   header.layoutHorizontally();
+  header.centerAlignContent();
 
-  const phaseBox = header.addStack();
-  phaseBox.backgroundColor = C.gold;
-  phaseBox.cornerRadius = 4;
-  phaseBox.setPadding(2, 6, 2, 6);
-  addText(phaseBox, phaseLabel(today.phase), Font.boldSystemFont(9), C.bg);
+  const nextEvent = checkpoints?.[0];
+  const eventName = nextEvent ? nextEvent.name.toUpperCase() : "AQUAMAN LANGKAWI";
+  const daysUntil = nextEvent ? `${nextEvent.days_until}d` : "—";
 
+  addText(header, eventName, Font.boldSystemFont(8), C.gold);
   header.addSpacer();
+  addText(header, `🌊 ${daysUntil}`, Font.boldSystemFont(10), C.dim);
 
-  const daysToAquaman = today.days_to_aquaman ?? "—";
-  addText(header, `🌊 ${daysToAquaman}d`, Font.boldSystemFont(11), C.dim);
+  w.addSpacer(7);
 
-  w.addSpacer(10);
-
-  // ── Row 2: probability score (big) + body battery ────────────────────────
-  const scoreRow = w.addStack();
-  scoreRow.layoutHorizontally();
-  scoreRow.centerAlignContent();
-
-  const scoreStr = probScore !== null ? String(probScore) : "—";
-  const scoreColor = probScore >= 70 ? C.green : probScore >= 45 ? C.gold : C.red;
-  addText(scoreRow, scoreStr, Font.boldSystemFont(38), scoreColor);
-
-  scoreRow.addSpacer(8);
-
-  const batteryCol = scoreRow.addStack();
-  batteryCol.layoutVertically();
-
-  const todayLog = today.today_log;
-  const battery = todayLog?.morning_briefing_json?.metrics?.body_battery_current ?? null;
-  const batteryStr = battery !== null ? `⚡ ${battery}` : "⚡ —";
-  addText(batteryCol, batteryStr, Font.boldSystemFont(13), C.white);
-  addText(batteryCol, "battery", Font.systemFont(9), C.dim);
-  batteryCol.addSpacer(4);
-  addText(batteryCol, "%", Font.systemFont(10), C.dim);
-
-  scoreRow.addSpacer();
-
-  w.addSpacer(8);
-
-  // ── Row 3: today's session ───────────────────────────────────────────────
-  const plan = today.todays_plan;
-  const sessionName = plan?.session_name ?? "Rest Day";
-  const discipline  = plan?.discipline ?? null;
-  const duration    = plan?.duration_mins ? `${plan.duration_mins} min` : "";
-
-  const disciplineIcon = {
-    swim:  "🏊",
-    run:   "🏃",
-    bike:  "🚴",
-    brick: "🔁",
-    rest:  "😴",
-  }[discipline] ?? "🎯";
+  // ── Row 2: today's workout (hero) ─────────────────────────────────────────
+  const sessionName = session.planned_name ?? "Rest Day";
+  const discipline  = session.discipline   ?? "rest";
+  const duration    = session.duration_mins ? `${session.duration_mins}min` : null;
+  const isRest      = session.is_rest_day ?? false;
 
   const sessionRow = w.addStack();
   sessionRow.layoutHorizontally();
   sessionRow.centerAlignContent();
 
-  addText(sessionRow, `${disciplineIcon} `, Font.systemFont(14), C.white);
-  const nameEl = addText(sessionRow, sessionName, Font.mediumSystemFont(12), C.white, 1);
+  addText(
+    sessionRow,
+    `${disciplineIcon(discipline)}  ${sessionName}`,
+    Font.boldSystemFont(15),
+    isRest ? C.dim : C.white,
+    1
+  );
+  sessionRow.addSpacer();
+  if (duration) addText(sessionRow, duration, Font.systemFont(11), C.dim);
 
-  if (duration) {
-    sessionRow.addSpacer();
-    addText(sessionRow, duration, Font.systemFont(11), C.dim);
+  // Session description (truncated to 1 line)
+  const desc = session.description;
+  if (!isRest && desc) {
+    w.addSpacer(3);
+    addText(w, desc, Font.systemFont(10), C.dim, 1);
   }
 
-  w.addSpacer(4);
+  // Zone 2 HR target
+  if (!isRest && session.hr_target_low) {
+    w.addSpacer(2);
+    addText(w, `HR ${session.hr_target_low}–${session.hr_target_high} bpm  ·  Zone 2`, Font.systemFont(10), C.dim);
+  }
 
-  // ── Row 4: zone 2 HR range ───────────────────────────────────────────────
-  const z2 = today.zone2_bounds;
-  if (z2) {
-    addText(w, `Zone 2: ${z2.low}–${z2.high} bpm`, Font.systemFont(10), C.dim);
+  w.addSpacer(7);
+
+  // ── Row 3: execution — actual Garmin activity ─────────────────────────────
+  const execRow = w.addStack();
+  execRow.layoutHorizontally();
+  execRow.centerAlignContent();
+
+  if (completed) {
+    const actName = completed.activity_name
+      ?? (completed.activity_type ? completed.activity_type.toUpperCase() : "ACTIVITY");
+    const actDur  = completed.duration_mins  ? `${completed.duration_mins}min` : null;
+    const actHR   = completed.avg_heart_rate ? `${completed.avg_heart_rate}bpm` : null;
+    const color   = session.deviation ? C.gold : C.green;
+    const prefix  = session.deviation ? "⚡" : "✓";
+
+    addText(execRow, `${prefix}  ${disciplineIcon(completed.activity_type)}  ${actName}`, Font.systemFont(11), color, 1);
+    execRow.addSpacer();
+
+    const execMeta = [actDur, actHR].filter(Boolean).join("  ·  ");
+    if (execMeta) addText(execRow, execMeta, Font.systemFont(10), C.dim);
+  } else {
+    addText(execRow, "No activity synced yet", Font.systemFont(10), C.dim);
+    execRow.addSpacer();
+    addText(execRow, "/sync_workout", Font.systemFont(9), C.muted);
+  }
+
+  w.addSpacer();
+
+  // ── Row 4: week progress dots ─────────────────────────────────────────────
+  if (week && week.length > 0) {
+    const weekRow = w.addStack();
+    weekRow.layoutHorizontally();
+    weekRow.centerAlignContent();
+
+    const completed7 = week.filter(d => d.session !== null).length;
+    const dots = week.map(d => d.session !== null ? "●" : "○").join(" ");
+
+    addText(weekRow, dots, Font.systemFont(11), C.gold);
+    weekRow.addSpacer();
+    addText(weekRow, `${completed7}/7 this week`, Font.systemFont(10), C.dim);
   }
 
   return w;
@@ -161,8 +155,13 @@ async function buildWidget(today, probScore) {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-const [today, probScore] = await Promise.all([fetchToday(), fetchProbability()]);
-const widget = await buildWidget(today, probScore);
+const [today, checkpoints, week] = await Promise.all([
+  fetchJson("/api/today"),
+  fetchJson("/api/checkpoints"),
+  fetchJson("/api/week"),
+]);
+
+const widget = await buildWidget(today, checkpoints, week);
 
 if (config.runsInWidget) {
   Script.setWidget(widget);

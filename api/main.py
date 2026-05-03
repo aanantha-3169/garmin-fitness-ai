@@ -147,12 +147,12 @@ def today():
     # Build completed-activity block from Garmin sync (None when not yet synced)
     completed_block = None
     if completed:
-        dur_secs = completed.get("duration_seconds") or 0
+        dur_secs = completed.get("duration_secs") or 0
         completed_block = {
             "activity_type":  _map_activity_type(completed.get("activity_type") or ""),
             "activity_name":  completed.get("activity_name"),
             "duration_mins":  round(dur_secs / 60) if dur_secs else None,
-            "avg_heart_rate": completed.get("avg_heart_rate"),
+            "avg_heart_rate": completed.get("avg_hr"),
         }
 
     # Determine completion and deviation against the plan
@@ -292,7 +292,7 @@ def week():
         try:
             res = (
                 db_manager.supabase.table("completed_workouts")
-                .select("date, activity_type, activity_name, duration_seconds, avg_heart_rate")
+                .select("date, activity_type, activity_name, duration_secs, avg_hr")
                 .gte("date", start_str)
                 .lte("date", today_str)
                 .execute()
@@ -313,8 +313,8 @@ def week():
 
         session = None
         if workout:
-            avg_hr        = workout.get("avg_heart_rate")
-            dur_secs      = workout.get("duration_seconds") or 0
+            avg_hr        = workout.get("avg_hr")
+            dur_secs      = workout.get("duration_secs") or 0
             duration_mins = round(dur_secs / 60) if dur_secs else None
             in_zone2      = (z2_low <= avg_hr <= z2_high) if isinstance(avg_hr, (int, float)) else None
             session = {
