@@ -7,7 +7,17 @@
     },
     {
       "src": "api/main.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "db_manager.py",
+          "sport_science.py",
+          "training_plan.py",
+          "garmin_metrics.py",
+          "garmin_client.py",
+          "garmin_scheduler.py"
+        ]
+      }
     }
   ],
   "routes": [
