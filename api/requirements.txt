@@ -1,4 +1,6 @@
 fastapi
+mangum
+uvicorn
 supabase
 python-dotenv
 pydantic

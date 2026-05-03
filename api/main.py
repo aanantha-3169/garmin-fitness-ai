@@ -5,7 +5,7 @@ All endpoints are read-only. No authentication (single-user system,
 no sensitive data beyond personal fitness metrics).
 
 Endpoints:
-  GET  /health             → Vercel health check
+  GET  /api/health         → Vercel health check
   GET  /api/today          → garmin vitals, nutrition, session plan, readiness
   GET  /api/probability    → overall score + components + 30-day trend
   GET  /api/week           → last 7 days: sessions, load, fear, calories
@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from mangum import Mangum
 
 import db_manager
 import sport_science
@@ -96,7 +97,7 @@ def _map_activity_type(raw: str) -> str:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@app.get("/health")
+@app.get("/api/health")
 def health():
     """Vercel health check — returns 200 when the service is up."""
     return {"status": "ok", "timestamp": date.today().isoformat()}
@@ -398,3 +399,9 @@ def checkpoints():
             "critical_metric": "all",
         },
     ]
+
+
+# ── Vercel ASGI entry point ───────────────────────────────────────────────────
+# Vercel's Python runtime looks for a top-level `handler` callable.
+# Mangum wraps the FastAPI ASGI app so Vercel can invoke it as a serverless fn.
+handler = Mangum(app, lifespan="off")
