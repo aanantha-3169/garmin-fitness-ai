@@ -161,7 +161,21 @@ async def _cmd_sync_workout(update, _context):
     te_str = f"{aero_te:.1f}" if aero_te is not None else "N/A"
 
     import re
+    from datetime import date as _date
     def esc(t): return re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", str(t))
+
+    # Verify the row actually landed in Supabase
+    from db_manager import get_completed_workout
+    saved = get_completed_workout(_date.today().isoformat())
+    if not saved:
+        await update.message.reply_text(
+            f"⚠️ *Garmin data fetched but DB save failed\\!*\n\n"
+            f"Activity: {esc(name)}\n"
+            f"Check Render logs for the Supabase error\\.\n"
+            f"The `completed\\_workouts` table may not exist in Supabase\\.",
+            parse_mode="MarkdownV2",
+        )
+        return
 
     await update.message.reply_text(
         f"✅ *Workout synced\\!*\n\n"
