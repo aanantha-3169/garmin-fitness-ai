@@ -50,7 +50,7 @@ def _extract_telemetry(activity: Dict[str, Any]) -> Dict[str, Any]:
         "anaerobic_training_effect":  activity.get("anaerobicTrainingEffect"),
         "vo2max_value": activity.get("vO2MaxValue"),
         "avg_power":    activity.get("avgPower"),
-        "calories":     activity.get("calories"),
+        "calories":     int(activity["calories"]) if activity.get("calories") is not None else None,
         "raw_json":     activity,
     }
 
