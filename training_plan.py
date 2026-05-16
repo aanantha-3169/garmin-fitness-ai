@@ -240,13 +240,13 @@ def calculate_readiness_score(metrics: dict) -> dict:
     Returns dict with score, tier (GREEN/AMBER/RED),
     volume_factor, intensity_note, and component breakdown.
     """
-    body_battery = metrics.get("body_battery_current", 50)
-    hrv_status   = metrics.get("hrv_status", "Balanced")
-    sleep_score  = metrics.get("sleep_score", 70)
-    stress_avg   = metrics.get("stress_avg", 30)
-    workday_load = metrics.get("workday_load", 5)
-    rhr          = metrics.get("resting_heart_rate_bpm", 52)
-    rhr_baseline = metrics.get("rhr_baseline", 52)
+    body_battery = metrics.get("body_battery_current") or 50
+    hrv_status   = metrics.get("hrv_status") or "Balanced"
+    sleep_score  = metrics.get("sleep_score") or 70
+    stress_avg   = metrics.get("stress_avg") or 30
+    workday_load = metrics.get("workday_load") or 5
+    rhr          = metrics.get("resting_heart_rate_bpm") or 52
+    rhr_baseline = metrics.get("rhr_baseline") or 52
 
     hrv_map = {
         "Positive": 100, "Balanced": 80,
