@@ -83,8 +83,10 @@ _BASE_SCHEDULE = {
     2: {"name": "Zone 2 Swim", "sport_type": SPORT_SWIMMING,
         "description": "Pool swim. Technique focus. Continuous 400m blocks.",
         "duration_minutes": 45, "hr_target": (115, 145)},
-    3: {"name": "Zone 2 Bike", "sport_type": SPORT_CYCLING,
-        "description": "Outdoor or indoor bike. Strict Zone 2. 115-145 bpm.",
+    3: {"name": "Long Run — Zone 2", "sport_type": SPORT_RUNNING,
+        "description": "Weekly long run. 5:30am start. 6:20-7:00/km. HR 115-145. "
+                       "Walk if HR exceeds 145. Distance set by LONG_RUN_PROGRESSION "
+                       "in training_plan.py.",
         "duration_minutes": 75, "hr_target": (115, 145)},
     4: None,  # Rest / mobility
     5: {"name": "Zone 2 Bike (Brother Session)", "sport_type": SPORT_CYCLING,
@@ -105,9 +107,10 @@ _BUILD_SCHEDULE = {
     2: {"name": "Zone 2 Bike", "sport_type": SPORT_CYCLING,
         "description": "Outdoor or indoor bike. Strict Zone 2. 115-145 bpm.",
         "duration_minutes": 90, "hr_target": (115, 145)},
-    3: {"name": "Zone 2 Swim", "sport_type": SPORT_SWIMMING,
-        "description": "Pool swim. Continuous sets. Build open-water comfort.",
-        "duration_minutes": 60, "hr_target": (115, 145)},
+    3: {"name": "Long Run — Zone 2", "sport_type": SPORT_RUNNING,
+        "description": "Peak long run week. 5:30am start. 6:20-7:00/km. HR 115-145. "
+                       "Nutrition at km 15. Walk breaks permitted.",
+        "duration_minutes": 90, "hr_target": (115, 145)},
     4: None,  # Rest / mobility
     5: {"name": "Zone 2 Bike (Brother Session)", "sport_type": SPORT_CYCLING,
         "description": "Outdoor ride with brother if available. Zone 2 always.",
