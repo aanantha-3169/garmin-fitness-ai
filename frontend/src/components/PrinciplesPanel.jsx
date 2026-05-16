@@ -46,9 +46,10 @@ const PRINCIPLES = [
 ];
 
 const CHECKPOINTS = [
-  { name: "Aquaman Langkawi", date: "2026-07-25", what: "2km ocean swim", why: "Fear confrontation" },
-  { name: "Bintan Triathlon", date: "2026-10-12", what: "Sprint triathlon", why: "Dress rehearsal" },
-  { name: "Half Ironman", date: "2026-11-21", what: "1.9km / 90km / 21km", why: "The endpoint" },
+  { name: "Score Marathon",   date: "2026-07-19", what: "Marathon",               why: "Running benchmark" },
+  { name: "Melaka Triathlon", date: "2026-08-30", what: "Sprint triathlon",        why: "First triathlon" },
+  { name: "Bintan Triathlon", date: "2026-10-12", what: "Olympic triathlon",       why: "Dress rehearsal" },
+  { name: "Half Ironman",     date: "2026-11-21", what: "1.9km / 90km / 21km",    why: "The endpoint" },
 ];
 
 const SOURCES = [

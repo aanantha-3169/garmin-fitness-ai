@@ -99,15 +99,22 @@ ATHLETE = {
 ```python
 CHECKPOINTS = [
     {
-        "name": "Aquaman Langkawi",
-        "date": "2026-07-25",
-        "type": "swim_2km",
-        "purpose": "Open water fear confrontation — first ocean swim",
-        "critical_path": "swim",
+        "name": "Score Marathon",
+        "date": "2026-07-19",
+        "type": "marathon",
+        "purpose": "Running fitness benchmark",
+        "critical_path": "run",
+    },
+    {
+        "name": "Melaka Triathlon",
+        "date": "2026-08-30",
+        "type": "triathlon",
+        "purpose": "First full triathlon experience before Bintan",
+        "critical_path": "all",
     },
     {
         "name": "Bintan Triathlon",
-        "date": "2026-10-12",  # Approximate — confirm actual date
+        "date": "2026-10-12",
         "type": "triathlon",
         "purpose": "Full triathlon dress rehearsal",
         "critical_path": "all",

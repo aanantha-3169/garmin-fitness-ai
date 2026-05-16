@@ -14,20 +14,20 @@
 import { tokens, disciplineColor, disciplineIcon, card, sectionLabel } from "../lib/design";
 
 const PHASE_LABELS = {
-  base: "BASE",
-  build: "BUILD",
-  pre_aquaman: "PRE-AQUAMAN",
-  race_prep: "RACE PREP",
-  taper_bintan: "TAPER",
+  base:          "BASE",
+  build:         "BUILD",
+  pre_score:     "PRE-MARATHON",
+  taper_melaka:  "TAPER",
+  taper_bintan:  "TAPER",
   taper_ironman: "TAPER",
 };
 
 const PHASE_COLORS = {
-  base: tokens.textMuted,
-  build: tokens.gold,
-  pre_aquaman: tokens.blue,
-  race_prep: "#9B7FD4",
-  taper_bintan: tokens.green,
+  base:          tokens.textMuted,
+  build:         tokens.gold,
+  pre_score:     tokens.blue,
+  taper_melaka:  tokens.green,
+  taper_bintan:  tokens.green,
   taper_ironman: tokens.green,
 };
 

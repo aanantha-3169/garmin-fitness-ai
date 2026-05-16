@@ -192,13 +192,22 @@ function getMockData(endpoint) {
 
     "/api/checkpoints": [
       {
-        name: "Aquaman Langkawi",
-        date: "2026-07-25",
-        type: "swim_2km",
-        purpose: "Open water fear confrontation",
-        days_until: Math.ceil((new Date("2026-07-25") - new Date()) / 86400000),
-        readiness_score: 45,
-        critical_metric: "swim_frequency",
+        name: "Score Marathon",
+        date: "2026-07-19",
+        type: "marathon",
+        purpose: "Running fitness benchmark",
+        days_until: Math.ceil((new Date("2026-07-19") - new Date()) / 86400000),
+        readiness_score: null,
+        critical_metric: "consistency",
+      },
+      {
+        name: "Melaka Triathlon",
+        date: "2026-08-30",
+        type: "triathlon",
+        purpose: "First full triathlon experience",
+        days_until: Math.ceil((new Date("2026-08-30") - new Date()) / 86400000),
+        readiness_score: null,
+        critical_metric: "all",
       },
       {
         name: "Bintan Triathlon",
@@ -206,7 +215,7 @@ function getMockData(endpoint) {
         type: "triathlon",
         purpose: "Full triathlon dress rehearsal",
         days_until: Math.ceil((new Date("2026-10-12") - new Date()) / 86400000),
-        readiness_score: 52,
+        readiness_score: null,
         critical_metric: "ftp",
       },
       {

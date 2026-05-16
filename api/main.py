@@ -29,7 +29,7 @@ from mangum import Mangum
 import db_manager
 import sport_science
 from training_plan import (
-    AQUAMAN, BINTAN, IRONMAN,
+    SCORE_MARATHON, MELAKA, BINTAN, IRONMAN,
     FTP_W_KG,
     get_current_phase,
     get_week_sessions,
@@ -398,18 +398,26 @@ def checkpoints():
     overall     = _safe_get(prob, "overall_score")           if prob else None
     swim_score  = _safe_get(prob, "swim_frequency_score")    if prob else None
 
-    # Aquaman is swim-only: use swim_frequency component when available
-    aquaman_readiness = swim_score if swim_score is not None else overall
+    run_score = _safe_get(prob, "consistency_score") if prob else None
 
     return [
         {
-            "name":            "Aquaman Langkawi",
-            "date":            AQUAMAN.isoformat(),
-            "type":            "swim_2km",
-            "purpose":         "Open water fear confrontation",
-            "days_until":      _days_until(AQUAMAN),
-            "readiness_score": aquaman_readiness,
-            "critical_metric": "swim_frequency",
+            "name":            "Score Marathon",
+            "date":            SCORE_MARATHON.isoformat(),
+            "type":            "marathon",
+            "purpose":         "Running fitness benchmark",
+            "days_until":      _days_until(SCORE_MARATHON),
+            "readiness_score": run_score if run_score is not None else overall,
+            "critical_metric": "consistency",
+        },
+        {
+            "name":            "Melaka Triathlon",
+            "date":            MELAKA.isoformat(),
+            "type":            "triathlon",
+            "purpose":         "First full triathlon experience",
+            "days_until":      _days_until(MELAKA),
+            "readiness_score": overall,
+            "critical_metric": "all",
         },
         {
             "name":            "Bintan Triathlon",

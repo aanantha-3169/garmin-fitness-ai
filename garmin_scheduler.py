@@ -2,15 +2,17 @@
 garmin_scheduler.py — Schedule workouts on the Garmin Connect calendar.
 
 Phase-aware triathlon periodization schedule targeting:
-  • Aquaman Sprint Triathlon  — 2026-07-25
-  • Bintan 70.3               — 2026-10-12
-  • Ironman Malaysia          — 2026-11-21
+  • Score Marathon   — 2026-07-19
+  • Melaka Triathlon — 2026-08-30
+  • Bintan Triathlon — 2026-10-12
+  • Half Ironman     — 2026-11-21
 
 Phases (derived from days-to-race):
-  base         — >60 days to Aquaman; Zone 2 aerobic base building
-  build        — 21–60 days to Aquaman; volume increase
-  pre_aquaman  — ≤21 days to Aquaman; race-specific sharpening
-  taper_bintan — ≤14 days to Bintan; volume cut for 70.3
+  base          — >60 days to Score Marathon; Zone 2 aerobic base building
+  build         — 21–60 days to Score Marathon; volume increase
+  pre_score     — ≤21 days to Score Marathon; race-specific sharpening
+  taper_melaka  — ≤14 days to Melaka; taper for sprint triathlon
+  taper_bintan  — ≤14 days to Bintan; volume cut for 70.3
   taper_ironman — ≤14 days to Ironman; maximum taper
 
 Usage:
@@ -45,21 +47,25 @@ def get_phase(today: date = None) -> str:
     """Return current training phase based on days to each checkpoint."""
     if today is None:
         today = date.today()
-    aquaman  = date(2026, 7, 25)
-    bintan   = date(2026, 10, 12)
-    ironman  = date(2026, 11, 21)
+    score_marathon = date(2026, 7, 19)
+    melaka         = date(2026, 8, 30)
+    bintan         = date(2026, 10, 12)
+    ironman        = date(2026, 11, 21)
 
-    days_to_ironman  = (ironman  - today).days
-    days_to_bintan   = (bintan   - today).days
-    days_to_aquaman  = (aquaman  - today).days
+    days_to_ironman        = (ironman        - today).days
+    days_to_bintan         = (bintan         - today).days
+    days_to_melaka         = (melaka         - today).days
+    days_to_score_marathon = (score_marathon - today).days
 
     if days_to_ironman <= 14:
         return "taper_ironman"
     elif days_to_bintan <= 14:
         return "taper_bintan"
-    elif days_to_aquaman <= 21:
-        return "pre_aquaman"
-    elif days_to_aquaman > 60:
+    elif days_to_melaka <= 14:
+        return "taper_melaka"
+    elif days_to_score_marathon <= 21:
+        return "pre_score"
+    elif days_to_score_marathon > 60:
         return "base"
     else:
         return "build"
@@ -111,7 +117,7 @@ _BUILD_SCHEDULE = {
         "duration_minutes": 120, "hr_target": (115, 145)},
 }
 
-_PRE_AQUAMAN_SCHEDULE = {
+_PRE_SCORE_SCHEDULE = {
     0: {"name": "Swim Sharpener", "sport_type": SPORT_SWIMMING,
         "description": "Pool swim. Race-pace 100m efforts. Simulate sprint distance.",
         "duration_minutes": 45, "hr_target": (115, 155)},
@@ -168,7 +174,8 @@ _TAPER_IRONMAN_SCHEDULE = {
 _SCHEDULE_BY_PHASE: Dict[str, Dict] = {
     "base":          _BASE_SCHEDULE,
     "build":         _BUILD_SCHEDULE,
-    "pre_aquaman":   _PRE_AQUAMAN_SCHEDULE,
+    "pre_score":     _PRE_SCORE_SCHEDULE,
+    "taper_melaka":  _TAPER_BINTAN_SCHEDULE,
     "taper_bintan":  _TAPER_BINTAN_SCHEDULE,
     "taper_ironman": _TAPER_IRONMAN_SCHEDULE,
 }

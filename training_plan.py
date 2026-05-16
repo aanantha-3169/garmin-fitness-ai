@@ -23,9 +23,10 @@ from sport_science import zone2_bounds
 
 # ── Checkpoint dates ─────────────────────────────────────────────────────────
 
-AQUAMAN = date(2026, 7, 25)
-BINTAN  = date(2026, 10, 12)
-IRONMAN = date(2026, 11, 21)
+SCORE_MARATHON = date(2026, 7, 19)
+MELAKA         = date(2026, 8, 30)
+BINTAN         = date(2026, 10, 12)
+IRONMAN        = date(2026, 11, 21)
 
 # ── Athlete baselines (SPORT_SCIENCE.md) ─────────────────────────────────────
 
@@ -229,9 +230,10 @@ def get_athlete_context() -> dict[str, Any]:
     return {
         # Timeline
         "current_phase":        phase,
-        "days_to_aquaman":      (AQUAMAN - today).days,
-        "days_to_bintan":       (BINTAN  - today).days,
-        "days_to_ironman":      (IRONMAN - today).days,
+        "days_to_score_marathon": (SCORE_MARATHON - today).days,
+        "days_to_melaka":         (MELAKA        - today).days,
+        "days_to_bintan":         (BINTAN        - today).days,
+        "days_to_ironman":        (IRONMAN       - today).days,
         # Today
         "todays_session":       get_todays_plan(),
         # Fitness baselines (SPORT_SCIENCE.md)

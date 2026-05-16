@@ -65,7 +65,7 @@ Training pace targets:
 For now: All swim sessions are easy pace (2:15-2:30/100m) until CSS
 is properly measured via time trial.
 
-Aquaman target: Complete 2km at 2:20-2:30/100m (≈46-50 min total)
+Melaka/Bintan swim target: Complete race swim at 2:20-2:30/100m
 Half Ironman swim target: Complete 1.9km at 2:15/100m (≈43 min total)
 ```
 
@@ -81,6 +81,7 @@ Athlete weight: 74kg
 
 FTP progression targets:
   Now (May 2026):      2.22 W/kg
+  Melaka (Aug 2026):   2.5 W/kg    (+13% over 3 months)
   Bintan (Oct 2026):   2.8 W/kg    (+26% over 5 months)
   Half Ironman (Nov):  3.0 W/kg    (+35% over 6 months)
 

@@ -70,9 +70,10 @@ export default function CountdownBar({ checkpoints = [] }) {
     return (
       <div style={s.bar}>
         {[
-          { name: "Aquaman Langkawi", date: "2026-07-25", purpose: "Open water fear confrontation", readiness_score: 50 },
-          { name: "Bintan Triathlon", date: "2026-10-12", purpose: "Full triathlon dress rehearsal", readiness_score: 50 },
-          { name: "Half Ironman", date: "2026-11-21", purpose: "The endpoint", readiness_score: 50 },
+          { name: "Score Marathon",   date: "2026-07-19", purpose: "Running fitness benchmark",         readiness_score: null },
+          { name: "Melaka Triathlon", date: "2026-08-30", purpose: "First full triathlon experience",    readiness_score: null },
+          { name: "Bintan Triathlon", date: "2026-10-12", purpose: "Full triathlon dress rehearsal",     readiness_score: null },
+          { name: "Half Ironman",     date: "2026-11-21", purpose: "The endpoint",                       readiness_score: null },
         ].map((e, i) => {
           const days = Math.ceil((new Date(e.date) - new Date()) / 86400000);
           return (

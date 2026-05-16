@@ -46,8 +46,8 @@ energy — not extract the last remaining drops of it.
 ## Principle 03: No Ego Racing
 
 The checkpoint events are NOT performance targets. They exist to:
-1. Overcome fear of open water (Aquaman Langkawi — 2km swim)
-2. Experience full triathlon logistics under low stakes (Bintan Triathlon)
+1. Build running base and confidence (Score Marathon — July 2026)
+2. Experience full triathlon logistics under low stakes (Melaka & Bintan)
 3. Reach the endpoint that makes all four principles real (Half Ironman)
 
 There is no target finish time. There is no competition with colleagues.
@@ -81,9 +81,10 @@ endeavour.
 
 | Event | Date | Purpose | What Success Looks Like |
 |---|---|---|---|
-| Aquaman Langkawi | 2026-07-25 | Fear confrontation | Starting the swim and finishing. Nothing else. |
-| Bintan Triathlon | 2026-10-12 | Dress rehearsal | Completing all three disciplines. Learning transitions. |
-| Half Ironman | 2026-11-21 | The endpoint | Crossing the finish line. Principle 03. |
+| Score Marathon   | 2026-07-19 | Running benchmark   | Starting and finishing. Any pace. |
+| Melaka Triathlon | 2026-08-30 | First triathlon      | Completing all three disciplines. Learning transitions. |
+| Bintan Triathlon | 2026-10-12 | Dress rehearsal      | Executing the race plan. Refining transitions. |
+| Half Ironman     | 2026-11-21 | The endpoint         | Crossing the finish line. Principle 03. |
 
 ---
 
