@@ -125,7 +125,8 @@ def _to_plan_row(
     discipline = _SPORT_KEY_TO_DISCIPLINE.get(sport_key, "other")
 
     duration = max(20, round(session.get("duration_minutes", 45) * multiplier))
-    hr_low, hr_high = session.get("hr_target", zone2_bounds(get_athlete_hr_max()))
+    hr_target = session.get("hr_target")
+    hr_low, hr_high = hr_target if hr_target else zone2_bounds(get_athlete_hr_max())
 
     return {
         "week_number":        week_num,
