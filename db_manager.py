@@ -556,7 +556,13 @@ def get_compliance_trend(days: int = 14) -> list:
 def save_probability_snapshot(date_str: str, scores: Dict[str, Any]) -> bool:
     """Insert a probability snapshot row for *date_str*.
 
-    *scores* should contain overall_score and component keys matching the table.
+    *scores* must use the column names from SCHEMA.md::probability_snapshots:
+        overall_score           int  0-100
+        zone2_component         int  0-100
+        consistency_component   int  0-100
+        life_load_component     int  0-100
+        swim_frequency_component int 0-100
+        notes                   str  optional free text
     """
     if not supabase:
         return False

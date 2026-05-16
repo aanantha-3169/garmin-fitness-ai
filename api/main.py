@@ -262,20 +262,20 @@ def probability():
         "overall_score": snap.get("overall_score"),
         "components": {
             "zone2_compliance": {
-                "score": snap.get("zone2_compliance_score"),
-                "note":  snap.get("zone2_compliance_note", ""),
+                "score": snap.get("zone2_component"),
+                "note":  snap.get("notes", ""),
             },
             "consistency": {
-                "score": snap.get("consistency_score"),
-                "note":  snap.get("consistency_note", ""),
+                "score": snap.get("consistency_component"),
+                "note":  "",
             },
             "life_load_buffer": {
-                "score": snap.get("life_load_buffer_score"),
-                "note":  snap.get("life_load_buffer_note", ""),
+                "score": snap.get("life_load_component"),
+                "note":  "",
             },
             "swim_frequency": {
-                "score": snap.get("swim_frequency_score"),
-                "note":  snap.get("swim_frequency_note", ""),
+                "score": snap.get("swim_frequency_component"),
+                "note":  "",
             },
         },
         "trend_30d":    trend_30d,
@@ -411,9 +411,9 @@ def checkpoints():
     """Return each checkpoint event with days remaining and readiness score."""
     prob = db_manager.get_latest_probability()
     overall     = _safe_get(prob, "overall_score")           if prob else None
-    swim_score  = _safe_get(prob, "swim_frequency_score")    if prob else None
+    swim_score  = _safe_get(prob, "swim_frequency_component") if prob else None
 
-    run_score = _safe_get(prob, "consistency_score") if prob else None
+    run_score = _safe_get(prob, "consistency_component") if prob else None
 
     return [
         {
