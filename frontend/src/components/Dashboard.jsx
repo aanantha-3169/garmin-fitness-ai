@@ -43,7 +43,8 @@ function getWindowStatus(now) {
 function getReadinessTier(todayData) {
   const r = todayData?.readiness;
   if (!r) return "GREEN";
-  if (r.principle_violations?.length > 0) return "RED";
+  if (r.tier) return r.tier;                              // computed from live metrics
+  if (r.principle_violations?.length > 0) return "RED";  // fallback: briefing signals
   if (r.adjustment_needed) return "AMBER";
   return "GREEN";
 }

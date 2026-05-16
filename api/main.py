@@ -34,6 +34,7 @@ from training_plan import (
     get_current_phase,
     get_week_sessions,
     get_athlete_hr_max,
+    calculate_readiness_score,
 )
 
 # ── App setup ────────────────────────────────────────────────────────────────
@@ -192,9 +193,27 @@ def today():
             "completed":      completed_block,
         }
 
+    # Today's workday load from principle_compliance (days=0 → today only)
+    today_compliance = db_manager.get_compliance_trend(days=0)
+    workday_load = today_compliance[0].get("life_load_score") if today_compliance else None
+
+    # Compute readiness tier directly from live Garmin metrics
+    readiness_inputs = {
+        "body_battery_current":   garmin.get("body_battery"),
+        "hrv_status":             garmin.get("hrv_status"),
+        "sleep_score":            garmin.get("sleep_score"),
+        "stress_avg":             garmin.get("stress_avg"),
+        "resting_heart_rate_bpm": garmin.get("resting_heart_rate_bpm"),
+        "workday_load":           workday_load,
+    }
+    computed = calculate_readiness_score(readiness_inputs)
+
     readiness = {
-        "recommended_action":      decision.get("recommended_action", "Check back after morning briefing."),
-        "adjustment_needed":       decision.get("adjustment_needed", False),
+        "tier":                    computed["tier"],
+        "score":                   computed["score"],
+        "intensity_note":          computed["intensity_note"],
+        "recommended_action":      decision.get("recommended_action", computed["intensity_note"]),
+        "adjustment_needed":       decision.get("adjustment_needed", computed["tier"] != "GREEN"),
         "zone2_target_hr_low":     decision.get("zone2_target_hr_low", z2_low),
         "zone2_target_hr_high":    decision.get("zone2_target_hr_high", z2_high),
         "principle_violations":    decision.get("principle_violations", []),
@@ -203,10 +222,6 @@ def today():
             or decision.get("philosophical_reflection", "")
         ),
     }
-
-    # Today's workday load from principle_compliance (days=0 → today only)
-    today_compliance = db_manager.get_compliance_trend(days=0)
-    workday_load = today_compliance[0].get("life_load_score") if today_compliance else None
 
     return {
         "date":             today_str,
