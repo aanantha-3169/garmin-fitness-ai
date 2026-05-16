@@ -295,6 +295,99 @@ def stss_from_swim(distance_km: float, css_secs_100m: float, actual_pace_secs_10
 
 # ── Probability / completion-likelihood score ─────────────────────────────────
 
+def calculate_ironman_probability(
+    completed_workouts: list[dict],
+    compliance_rows: list[dict],
+    zone2_low: int = 115,
+    zone2_high: int = 145,
+) -> dict:
+    """Calculate the Ironman readiness probability score.
+
+    Implements the formula from CLAUDE.md exactly, using the 4 equal-weight
+    components stored in probability_snapshots.
+
+    Args:
+        completed_workouts: Rows from completed_workouts table (last 14 days).
+            Each row must have: date, activity_type, avg_hr.
+        compliance_rows: Rows from principle_compliance table (last 14 days).
+            Each row must have: date, life_load_score.
+        zone2_low:  Lower Zone 2 HR bound (bpm).
+        zone2_high: Upper Zone 2 HR bound (bpm).
+
+    Returns:
+        dict matching probability_snapshots column names:
+            overall_score            int  0–100
+            zone2_component          int  0–100
+            consistency_component    int  0–100
+            life_load_component      int  0–100
+            swim_frequency_component int  0–100
+            notes                    str  human-readable breakdown
+    """
+    recent_workouts = completed_workouts[-14:] if len(completed_workouts) > 14 else completed_workouts
+
+    # ── zone2_component (0–100) ───────────────────────────────────────────────
+    # sessions with avg_hr in Zone 2 / total sessions (last 14 days)
+    total_sessions = len(recent_workouts)
+    zone2_sessions = sum(
+        1 for w in recent_workouts
+        if w.get("avg_hr") is not None
+        and zone2_low <= int(w["avg_hr"]) <= zone2_high
+    )
+    zone2_ratio = (zone2_sessions / total_sessions) if total_sessions else 0.0
+    zone2_component = round(zone2_ratio * 100)
+
+    # ── consistency_component (0–100) ─────────────────────────────────────────
+    # actual sessions / target 7 sessions in the last 7 days
+    from datetime import date, timedelta
+    cutoff_7d = (date.today() - timedelta(days=7)).isoformat()
+    last_7_workouts = [w for w in recent_workouts if w.get("date", "") >= cutoff_7d]
+    consistency_ratio = min(1.0, len(last_7_workouts) / 7)
+    consistency_component = round(consistency_ratio * 100)
+
+    # ── life_load_component (0–100) ───────────────────────────────────────────
+    # ((10 - avg_workday_load) / 9) × 100
+    load_values = [
+        r["life_load_score"] for r in compliance_rows
+        if r.get("life_load_score") is not None
+    ]
+    if load_values:
+        avg_load = sum(load_values) / len(load_values)
+        life_load_component = round(max(0.0, (10 - avg_load) / 9) * 100)
+    else:
+        life_load_component = 50  # neutral when no data
+
+    # ── swim_frequency_component (0–100) ──────────────────────────────────────
+    # swim sessions in last 7 days / target 2 swims per week
+    swim_sessions = sum(
+        1 for w in last_7_workouts
+        if "swim" in (w.get("activity_type") or "").lower()
+    )
+    swim_ratio = min(1.0, swim_sessions / 2)
+    swim_frequency_component = round(swim_ratio * 100)
+
+    # ── Overall (equal-weight average) ───────────────────────────────────────
+    overall_score = round(
+        (zone2_component + consistency_component +
+         life_load_component + swim_frequency_component) / 4
+    )
+
+    notes = (
+        f"Zone2: {zone2_sessions}/{total_sessions} sessions in Z2 | "
+        f"Consistency: {len(last_7_workouts)}/7 sessions | "
+        f"Life load avg: {round(sum(load_values)/len(load_values), 1) if load_values else 'N/A'} | "
+        f"Swims: {swim_sessions}/2 target"
+    )
+
+    return {
+        "overall_score":            overall_score,
+        "zone2_component":          zone2_component,
+        "consistency_component":    consistency_component,
+        "life_load_component":      life_load_component,
+        "swim_frequency_component": swim_frequency_component,
+        "notes":                    notes,
+    }
+
+
 def calculate_probability(logs: list[dict]) -> dict:
     """Estimate race-completion probability score from recent training logs.
 

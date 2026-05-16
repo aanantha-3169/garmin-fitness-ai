@@ -86,6 +86,52 @@ def main():
     init_daily_log(date_str, decision.target_calories, briefing_data)
     logger.info(f"✅ Daily log for {date_str} saved. Refresh the dashboard!")
 
+    # 7. Calculate and persist probability snapshot
+    logger.info("📈 Calculating Ironman probability score...")
+    from datetime import timedelta
+    from db_manager import get_weekly_logs, get_compliance_trend, save_probability_snapshot
+    from sport_science import calculate_ironman_probability
+    from training_plan import get_athlete_hr_max
+    from sport_science import zone2_bounds
+
+    hr_max = get_athlete_hr_max()
+    z2_low, z2_high = zone2_bounds(hr_max)
+
+    # Fetch last 14 days of completed workouts directly from Supabase
+    from db_manager import supabase as _sb
+    workouts_14d = []
+    if _sb:
+        try:
+            start_14d = (today - timedelta(days=13)).isoformat()
+            res = (
+                _sb.table("completed_workouts")
+                .select("date, activity_type, avg_hr")
+                .gte("date", start_14d)
+                .order("date", desc=False)
+                .execute()
+            )
+            workouts_14d = res.data or []
+        except Exception as exc:
+            logger.warning("⚠️  Could not fetch completed_workouts for probability: %s", exc)
+
+    compliance_14d = get_compliance_trend(days=14)
+
+    snapshot = calculate_ironman_probability(
+        completed_workouts=workouts_14d,
+        compliance_rows=compliance_14d,
+        zone2_low=z2_low,
+        zone2_high=z2_high,
+    )
+
+    save_probability_snapshot(date_str, snapshot)
+    logger.info(
+        f"✅ Probability snapshot saved: {snapshot['overall_score']}% "
+        f"(Z2={snapshot['zone2_component']} | "
+        f"Consistency={snapshot['consistency_component']} | "
+        f"Load={snapshot['life_load_component']} | "
+        f"Swim={snapshot['swim_frequency_component']})"
+    )
+
 
 if __name__ == "__main__":
     main()
