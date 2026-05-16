@@ -44,7 +44,6 @@ SPORT_STRENGTH    = {"sportTypeId": 13, "sportTypeKey": "strength_training", "di
 # weekday(): Mon=0 Tue=1 Wed=2 Thu=3 Fri=4 Sat=5 Sun=6
 
 def get_phase(today: date = None) -> str:
-    """Return current training phase based on days to each checkpoint."""
     if today is None:
         today = date.today()
     score_marathon = date(2026, 7, 19)
@@ -57,18 +56,35 @@ def get_phase(today: date = None) -> str:
     days_to_melaka         = (melaka         - today).days
     days_to_score_marathon = (score_marathon - today).days
 
+    # Ironman taper — highest priority
     if days_to_ironman <= 14:
         return "taper_ironman"
-    elif days_to_bintan <= 14:
+    # Bintan taper (before him_build — post-Bintan days are negative)
+    if 0 <= days_to_bintan <= 14:
         return "taper_bintan"
-    elif days_to_melaka <= 14:
+    # Ironman build (post-Bintan or approaching Ironman)
+    if days_to_ironman <= 55:
+        return "him_build"
+    # Melaka taper (before bintan_build — post-Melaka days are negative)
+    if 0 <= days_to_melaka <= 14:
         return "taper_melaka"
-    elif days_to_score_marathon <= 21:
+    # Bintan build (post-Melaka, pre-taper)
+    if days_to_bintan <= 56:
+        return "bintan_build"
+    # Post-marathon recovery (first 14 days after marathon)
+    if days_to_score_marathon < 0 and days_to_melaka > 28:
+        return "marathon_recovery"
+    # Melaka build (post-marathon, pre-taper)
+    if days_to_score_marathon < 0:
+        return "melaka_build"
+    # Pre-marathon sharpening
+    if days_to_score_marathon <= 21:
         return "pre_score"
-    elif days_to_score_marathon > 60:
-        return "base"
-    else:
+    # Marathon build
+    if days_to_score_marathon <= 60:
         return "build"
+    # Base phase
+    return "base"
 
 
 # ── Phase schedules ──────────────────────────────────────────────────────────
@@ -174,13 +190,99 @@ _TAPER_IRONMAN_SCHEDULE = {
     6: None,  # Rest
 }
 
+_MARATHON_RECOVERY_SCHEDULE = {
+    0: {"name": "Easy Swim", "sport_type": SPORT_SWIMMING,
+        "description": "Gentle pool movement. No effort. Breaststroke permitted. Body healing from marathon.",
+        "duration_minutes": 30, "hr_target": (100, 125)},
+    1: None,  # No running for 10 days post-marathon
+    2: {"name": "Easy Swim", "sport_type": SPORT_SWIMMING,
+        "description": "Second recovery swim. Easy only.",
+        "duration_minutes": 30, "hr_target": (100, 125)},
+    3: None,  # No running
+    4: None,
+    5: {"name": "Easy Spin — Legs Flush", "sport_type": SPORT_CYCLING,
+        "description": "Gentle 30 min spin only. Flush the legs. No intensity.",
+        "duration_minutes": 30, "hr_target": (100, 125)},
+    6: None,
+}
+
+_MELAKA_BUILD_SCHEDULE = {
+    0: {"name": "Zone 2 Swim — 750m Target", "sport_type": SPORT_SWIMMING,
+        "description": "Build to 750m continuous. This is the Melaka swim distance. Must be unbroken before race day.",
+        "duration_minutes": 50, "hr_target": (115, 145)},
+    1: {"name": "Zone 2 Run", "sport_type": SPORT_RUNNING,
+        "description": "Easy run. Volume reduced post-marathon. 6:20-7:00/km. HR under 145.",
+        "duration_minutes": 40, "hr_target": (115, 145)},
+    2: {"name": "Zone 2 Swim — Open Water Prep", "sport_type": SPORT_SWIMMING,
+        "description": "Coached session. Open turn practice — no wall push-offs. Simulate open water sighting.",
+        "duration_minutes": 45, "hr_target": (115, 145)},
+    3: {"name": "Brick Session", "sport_type": SPORT_MULTISPORT,
+        "description": "45 min Boost bike Zone 2, then immediate 20 min run Zone 2. Note how legs feel off the bike.",
+        "duration_minutes": 65, "hr_target": (115, 145)},
+    4: None,
+    5: {"name": "Zone 2 Bike — Boost", "sport_type": SPORT_CYCLING,
+        "description": "Indoor Zone 2. Building bike base for Melaka 20km.",
+        "duration_minutes": 75, "hr_target": (115, 145)},
+    6: {"name": "Zone 2 Outdoor Bike", "sport_type": SPORT_CYCLING,
+        "description": "Car Free Day. Zone 2. Brother session when possible.",
+        "duration_minutes": 90, "hr_target": (115, 145), "brother_session": True},
+}
+
+_BINTAN_BUILD_SCHEDULE = {
+    0: {"name": "Zone 2 Swim — 1000m", "sport_type": SPORT_SWIMMING,
+        "description": "Build to 1000m continuous. Bintan is 1.5km. Must be comfortable at 1km before race.",
+        "duration_minutes": 55, "hr_target": (115, 145)},
+    1: {"name": "Zone 2 Run — Medium", "sport_type": SPORT_RUNNING,
+        "description": "Building back to 10-12km. Consistent aerobic base.",
+        "duration_minutes": 50, "hr_target": (115, 145)},
+    2: {"name": "Zone 2 Swim — Coached", "sport_type": SPORT_SWIMMING,
+        "description": "Volume focus. Continuous sets. Sighting practice.",
+        "duration_minutes": 50, "hr_target": (115, 145)},
+    3: {"name": "Long Brick", "sport_type": SPORT_MULTISPORT,
+        "description": "60 min Boost bike then 30 min run. Bintan bike is 40km. Build to 75 min bike by week 4.",
+        "duration_minutes": 90, "hr_target": (115, 145)},
+    4: None,
+    5: {"name": "Zone 2 Bike — Boost Long", "sport_type": SPORT_CYCLING,
+        "description": "Longer indoor ride. Building FTP base.",
+        "duration_minutes": 90, "hr_target": (115, 145)},
+    6: {"name": "Zone 2 Outdoor Bike — Long", "sport_type": SPORT_CYCLING,
+        "description": "Longest outdoor ride this phase. Brother session priority.",
+        "duration_minutes": 105, "hr_target": (115, 145), "brother_session": True},
+}
+
+_HIM_BUILD_SCHEDULE = {
+    0: {"name": "Zone 2 Swim — 1500m", "sport_type": SPORT_SWIMMING,
+        "description": "Build to 1500m+ continuous. HIM swim is 1.9km. Target 1500m by week 3.",
+        "duration_minutes": 60, "hr_target": (115, 145)},
+    1: {"name": "Zone 2 Run — Half Marathon Build", "sport_type": SPORT_RUNNING,
+        "description": "Build toward 18-21km. HIM run is 21.1km. These must feel manageable, not heroic.",
+        "duration_minutes": 75, "hr_target": (115, 145)},
+    2: {"name": "Zone 2 Swim — Race Simulation", "sport_type": SPORT_SWIMMING,
+        "description": "Mass start simulation. Open water entry practice. Sighting cues.",
+        "duration_minutes": 60, "hr_target": (115, 145)},
+    3: {"name": "Long Brick — HIM Specific", "sport_type": SPORT_MULTISPORT,
+        "description": "90-120 min bike then 30-40 min run. Most important weekly session. Both Zone 2.",
+        "duration_minutes": 150, "hr_target": (115, 145)},
+    4: None,
+    5: {"name": "Zone 2 Bike — Boost Long", "sport_type": SPORT_CYCLING,
+        "description": "Building to 120 min indoor. FTP improving.",
+        "duration_minutes": 105, "hr_target": (115, 145)},
+    6: {"name": "Zone 2 Outdoor Bike — Longest", "sport_type": SPORT_CYCLING,
+        "description": "Longest outdoor rides of the full plan. Brother sessions critical here.",
+        "duration_minutes": 120, "hr_target": (115, 145), "brother_session": True},
+}
+
 _SCHEDULE_BY_PHASE: Dict[str, Dict] = {
-    "base":          _BASE_SCHEDULE,
-    "build":         _BUILD_SCHEDULE,
-    "pre_score":     _PRE_SCORE_SCHEDULE,
-    "taper_melaka":  _TAPER_BINTAN_SCHEDULE,
-    "taper_bintan":  _TAPER_BINTAN_SCHEDULE,
-    "taper_ironman": _TAPER_IRONMAN_SCHEDULE,
+    "base":              _BASE_SCHEDULE,
+    "build":             _BUILD_SCHEDULE,
+    "pre_score":         _PRE_SCORE_SCHEDULE,
+    "marathon_recovery": _MARATHON_RECOVERY_SCHEDULE,
+    "melaka_build":      _MELAKA_BUILD_SCHEDULE,
+    "taper_melaka":      _TAPER_BINTAN_SCHEDULE,
+    "bintan_build":      _BINTAN_BUILD_SCHEDULE,
+    "taper_bintan":      _TAPER_BINTAN_SCHEDULE,
+    "him_build":         _HIM_BUILD_SCHEDULE,
+    "taper_ironman":     _TAPER_IRONMAN_SCHEDULE,
 }
 
 
